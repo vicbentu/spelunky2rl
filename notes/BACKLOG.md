@@ -77,11 +77,6 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   `package.loadlib` y la ruta de `script_path.lua`. Quitarla y pasar
   `tests/integration`. Solo probado bajo Wine en Docker; no la quité en la reorganización porque no
   puedo probarlo en Windows nativo.
-- [2026-10-03 15:26 @0880a21] `examples/record_video.py`: los vídeos salen con rojo y azul cambiados (la tierra de 1-1
-  sale azul). `env.render()` devuelve RGB (`engine/frames/x11.py`, `BGRA -> RGB`) y `cv2.VideoWriter`
-  espera BGR. Escribir `cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)`. Además usa `frames_per_step=2` y
-  `FPS = 30`: un modelo entrenado con `train_get_to_exit.py` (6) ve otro juego y el vídeo va a 1,5x;
-  con 6 pasos, `FPS = 10` es tiempo real.
 - [2026-10-03 16:55 @0641843] Antes de publicar en PyPI: los enlaces de `readme.md` a `docs/...` son relativos (4, p. ej.
   `[Getting Started](docs/getting-started.md)`) y en la página de PyPI salen rotos. Cambiarlos por URLs
   absolutas de GitHub (`https://github.com/vicbentu/spelunky2rl/blob/main/docs/...`). El README es el
@@ -167,5 +162,4 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   `manual_control` y un benchmark sin SB3, con el `VectorEnv` de Gymnasium?), adónde van las de
   entrenamiento (otro repo, `examples/` fuera del paquete sin extras, o borrarlas tras el
   reentrenamiento de Next, que hoy las usa), y si sobran extras. Repasar también tests y scripts
-  (`scripts/`, `feasibility/`) que ya no sirvan. Las entradas de `record_video.py` y del extra `all`
-  dependen de esta.
+  (`scripts/`, `feasibility/`) que ya no sirvan.
