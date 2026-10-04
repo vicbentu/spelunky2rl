@@ -1,12 +1,9 @@
 # Backlog
 
 Todo lo no empezado: `- [ts @sha] contexto suficiente para retomarlo en frío`. El sha es el commit en que
-estaba el código al escribirlo (`git show <sha>:<ruta>`). *Next* es lo elegido, en orden; lo primero es lo
-que pasa a `PLAN.md` cuando acabe el objetivo en marcha. Después, según cuánto se sabe: Bugs (algo está
-mal), Improvements (se sabe exactamente qué hacer, solo falta el cuándo), Ideas (vale la pena mirarlo; aún
-no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
-
-## Next
+estaba el código al escribirlo (`git show <sha>:<ruta>`). Por secciones, según cuánto se sabe: Bugs (algo está mal),
+Improvements (se sabe exactamente qué hacer, solo falta el cuándo), Ideas (vale la pena mirarlo; aún no se
+sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
 
 ## Bugs
 
