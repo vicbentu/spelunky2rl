@@ -101,9 +101,6 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   `permissions: id-token: write`. En PyPI (a mano, una vez): "Add a new pending publisher" con proyecto
   `spelunky2rl`, owner `vicbentu`, repo `spelunky2rl`, workflow `pypi.yml`,
   entorno `pypi`. La primera versión en PyPI sería `0.1.1`: `v0.1.0` no tiene licencia.
-- [2026-10-03 21:40 @0641843] El extra `all` de `pyproject.toml` repite a mano los paquetes de `train`, `render` y `video`:
-  cualquier paquete nuevo hay que ponerlo en dos sitios. Mejor definir
-  `all = ["spelunky2rl[train,render,video]"]` para que no se desincronicen.
 - [2026-10-03 22:25 @e9148d6] Al publicar en PyPI, en el mismo commit que prepara la versión y justo antes de crear el tag: subir a
   `0.1.1` `__version__` (`src/spelunky2rl/version.py`) y `MOD_VERSION`
   (`src/spelunky2rl/mod/lua/spelunky2rl/protocol.lua:8`; solo sale en el mensaje de error de

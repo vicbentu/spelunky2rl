@@ -48,11 +48,7 @@ dev = [
 
 # Install everything
 all = [
-    "mss",
-    "torch",
-    "stable-baselines3",
-    "sb3-contrib",
-    "opencv-python",
+    "spelunky2rl[train,render,video]",
 ]
 
 [tool.setuptools.dynamic]
