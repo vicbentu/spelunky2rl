@@ -29,7 +29,7 @@ spelunky2rl pull      # Linux: the game runtime image (Wine, Playlunky, Overlunk
 spelunky2rl doctor    # checks Docker, GPU, the image and your game folder
 ```
 
-See [Getting Started](docs/getting-started.md) for the details.
+See [Getting Started](https://github.com/vicbentu/spelunky2rl/blob/main/docs/getting-started.md) for the details.
 
 ### Basic Usage
 
@@ -57,9 +57,9 @@ env.close()
 
 ## Documentation
 
-- **[Getting Started](docs/getting-started.md)** - Installation, configuration, and first steps
-- **[Environments Guide](docs/environments.md)** - Creating and customizing environments
-- **[Architecture Guide](docs/architecture.md)** - Technical details and internal workings
+- **[Getting Started](https://github.com/vicbentu/spelunky2rl/blob/main/docs/getting-started.md)** - Installation, configuration, and first steps
+- **[Environments Guide](https://github.com/vicbentu/spelunky2rl/blob/main/docs/environments.md)** - Creating and customizing environments
+- **[Architecture Guide](https://github.com/vicbentu/spelunky2rl/blob/main/docs/architecture.md)** - Technical details and internal workings
 
 ## Examples
 
@@ -96,6 +96,6 @@ Special thanks to the entire spelunky-fyi community for maintaining these excell
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Bundled third-party code keeps its own license: luasocket (MIT,
+MIT, see [LICENSE](https://github.com/vicbentu/spelunky2rl/blob/main/LICENSE). Bundled third-party code keeps its own license: luasocket (MIT,
 `src/spelunky2rl/mod/lua/luasocket/license.txt`) and overlunky's `entities-hierarchy.md` (MIT).
 Spelunky 2 itself is not included: each user provides their own copy of the game.

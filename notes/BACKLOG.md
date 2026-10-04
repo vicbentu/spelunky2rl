@@ -77,10 +77,6 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   `package.loadlib` y la ruta de `script_path.lua`. Quitarla y pasar
   `tests/integration`. Solo probado bajo Wine en Docker; no la quité en la reorganización porque no
   puedo probarlo en Windows nativo.
-- [2026-10-03 16:55 @0641843] Antes de publicar en PyPI: los enlaces de `readme.md` a `docs/...` son relativos (4, p. ej.
-  `[Getting Started](docs/getting-started.md)`) y en la página de PyPI salen rotos. Cambiarlos por URLs
-  absolutas de GitHub (`https://github.com/vicbentu/spelunky2rl/blob/main/docs/...`). El README es el
-  `readme` de `pyproject.toml`, así que va tal cual a PyPI.
 - [2026-10-03 16:55 @0641843] Antes de publicar en PyPI: añadir `[project.urls]` a `pyproject.toml` (al menos
   `Repository = "https://github.com/vicbentu/spelunky2rl"` y `Documentation` apuntando a `docs/`) para
   que la página de PyPI enlace al repo. Hoy no hay ninguna URL en los metadatos.
