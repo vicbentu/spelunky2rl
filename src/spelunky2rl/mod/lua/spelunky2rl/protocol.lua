@@ -5,7 +5,7 @@ local M = {}
 
 -- Keep in sync with PROTOCOL_VERSION in engine/protocol.py and __version__ in version.py
 local PROTOCOL_VERSION = 1
-local MOD_VERSION = "0.1.0"
+local MOD_VERSION = "0.1.1"
 
 local client = nil
 

@@ -77,12 +77,13 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   `package.loadlib` y la ruta de `script_path.lua`. Quitarla y pasar
   `tests/integration`. Solo probado bajo Wine en Docker; no la quité en la reorganización porque no
   puedo probarlo en Windows nativo.
-- [2026-10-03 22:25 @e9148d6] Al publicar en PyPI, en el mismo commit que prepara la versión y justo antes de crear el tag: subir a
-  `0.1.1` `__version__` (`src/spelunky2rl/version.py`) y `MOD_VERSION`
-  (`src/spelunky2rl/mod/lua/spelunky2rl/protocol.lua:8`; solo sale en el mensaje de error de
-  `check_hello`). `v0.1.0` ya existe y es anterior a la licencia MIT. El tag `v0.1.1` dispara
-  `docker.yml` (imagen `spelunky2rl-game:0.1.1`, que es la que pide `DEFAULT_IMAGE` en
-  `engine/launchers/docker.py`) y `pypi.yml`: los dos workflows comprueban que tag y versión coinciden.
+- [2026-10-04 02:08 @7bb7227] Publicar la 0.1.1 (todo lo de dentro del repo está hecho; quedan pasos fuera, a mano):
+  1) en pypi.org, "Add a new pending publisher": proyecto `spelunky2rl`, owner `vicbentu`, repo
+  `spelunky2rl`, workflow `pypi.yml`, entorno `pypi`; 2) mergear `dev` a `main`; 3) `git tag v0.1.1`
+  sobre `main` y push del tag: lanza `pypi.yml` y `docker.yml`; 4) en GitHub, marcar como público el
+  paquete `spelunky2rl-game` de GHCR (ver `Q/game-image-unpublished`). Después, comprobar que
+  `pip install spelunky2rl` + `spelunky2rl pull` funcionan en un venv limpio y que el enlace a `LICENSE`
+  del README (hoy 404: la licencia no está en `main`) responde.
 
 ## Ideas
 
