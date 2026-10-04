@@ -77,19 +77,45 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   `package.loadlib` y la ruta de `script_path.lua`. Quitarla y pasar
   `tests/integration`. Solo probado bajo Wine en Docker; no la quité en la reorganización porque no
   puedo probarlo en Windows nativo.
-- [2026-10-01 22:12 @13fadde] `engine/frames/x11.py:15`: `mss.mss(display=display)` da `DeprecationWarning: mss.mss is
-  deprecated and will be removed in a future release; use mss.MSS instead` (visto en
-  `test_render_returns_game_frames` con mss 10.x). Cambiar a `mss.MSS(display=display)` y comprobar la
-  versión mínima de `mss` que lo tiene para fijarla en el extra `render` de `pyproject.toml`.
-- [2026-10-03 15:11 @0880a21] El extra `train` de `pyproject.toml` (torch, stable-baselines3, sb3-contrib) no trae
-  `tensorboard`, y `examples/train_get_to_exit.py` pasa `tensorboard_log=`: con solo `.[train]` el
-  ejemplo falla al empezar `learn()` con `ImportError: Trying to log data to tensorboard but tensorboard
-  is not installed`. Añadir `"tensorboard"` al extra `train`.
 - [2026-10-03 15:26 @0880a21] `examples/record_video.py`: los vídeos salen con rojo y azul cambiados (la tierra de 1-1
   sale azul). `env.render()` devuelve RGB (`engine/frames/x11.py`, `BGRA -> RGB`) y `cv2.VideoWriter`
   espera BGR. Escribir `cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)`. Además usa `frames_per_step=2` y
   `FPS = 30`: un modelo entrenado con `train_get_to_exit.py` (6) ve otro juego y el vídeo va a 1,5x;
   con 6 pasos, `FPS = 10` es tiempo real.
+- [2026-10-03 16:55 @0641843] Antes de publicar en PyPI: los enlaces de `readme.md` a `docs/...` son relativos (4, p. ej.
+  `[Getting Started](docs/getting-started.md)`) y en la página de PyPI salen rotos. Cambiarlos por URLs
+  absolutas de GitHub (`https://github.com/vicbentu/spelunky2rl/blob/main/docs/...`). El README es el
+  `readme` de `pyproject.toml`, así que va tal cual a PyPI.
+- [2026-10-03 16:55 @0641843] Antes de publicar en PyPI: añadir `[project.urls]` a `pyproject.toml` (al menos
+  `Repository = "https://github.com/vicbentu/spelunky2rl"` y `Documentation` apuntando a `docs/`) para
+  que la página de PyPI enlace al repo. Hoy no hay ninguna URL en los metadatos.
+- [2026-10-03 20:57 @0641843] Al publicar en PyPI: las instrucciones de instalación dicen `git clone` + `pip install .`
+  (`readme.md` l. 26-27; `docs/getting-started.md` l. 34-36 y el "`pip install .`" de l. 264). Pasarlas a
+  `pip install spelunky2rl` (con `[render]`/`[train]`) y dejar el clon solo para quien quiera desarrollar
+  o editar el mod (`SPELUNKY2RL_DEV_MOD`, l. 59).
+- [2026-10-03 21:40 @0641843] Antes de publicar en PyPI: añadir `authors = [{name = "vicbentu"}]` a
+  `[project]` en `pyproject.toml`; sin él la página de PyPI no muestra autor.
+- [2026-10-03 21:40 @0641843] Antes de publicar en PyPI: workflow `.github/workflows/pypi.yml` con Trusted Publishing. En
+  tags `v*`: comprobar que el tag coincide con `spelunky2rl.version.__version__` (como `docker.yml`),
+  `python -m build`, y `pypa/gh-action-pypi-publish` en un job con `environment: pypi` y
+  `permissions: id-token: write`. En PyPI (a mano, una vez): "Add a new pending publisher" con proyecto
+  `spelunky2rl`, owner `vicbentu`, repo `spelunky2rl`, workflow `pypi.yml`,
+  entorno `pypi`. La primera versión en PyPI sería `0.1.1`: `v0.1.0` no tiene licencia.
+- [2026-10-03 21:40 @0641843] El extra `all` de `pyproject.toml` repite a mano los paquetes de `train`, `render` y `video`:
+  cualquier paquete nuevo hay que ponerlo en dos sitios. Mejor definir
+  `all = ["spelunky2rl[train,render,video]"]` para que no se desincronicen.
+- [2026-10-03 22:25 @e9148d6] `engine/frames/x11.py:15`: cambiar `mss.mss(display=display)` por `mss.MSS(display=display)` y fijar
+  `"mss>=10.2"` en el extra `render` (y en `all`). `mss.MSS` existe desde mss 10.2.0 (abril de 2026;
+  probado: 10.1.0 no lo tiene) y desde esa versión `mss.mss` da `DeprecationWarning` y se quitará. `MSS`
+  acepta `display=` como argumento con nombre y tiene `grab`, `monitors` y `close`: el resto de
+  `X11FrameSource` no cambia. mss 10.2 pide Python >=3.9, igual que el paquete. Verificar con
+  `test_render_returns_game_frames` (`tests/integration`).
+- [2026-10-03 22:25 @e9148d6] Al publicar en PyPI, en el mismo commit que prepara la versión y justo antes de crear el tag: subir a
+  `0.1.1` `__version__` (`src/spelunky2rl/version.py`) y `MOD_VERSION`
+  (`src/spelunky2rl/mod/lua/spelunky2rl/protocol.lua:8`; solo sale en el mensaje de error de
+  `check_hello`). `v0.1.0` ya existe y es anterior a la licencia MIT. El tag `v0.1.1` dispara
+  `docker.yml` (imagen `spelunky2rl-game:0.1.1`, que es la que pide `DEFAULT_IMAGE` en
+  `engine/launchers/docker.py`) y `pypi.yml`: los dos workflows comprueban que tag y versión coinciden.
 
 ## Ideas
 
@@ -139,3 +165,16 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   diferencia de distancias) no es el problema: es una diferencia de potencial y no cambia la política
   óptima. Mirar solo si el reentrenamiento (ver Next) se atasca: contar cuántos episodios acaban por
   este corte y dónde está el jugador.
+- [2026-10-03 22:25 @e9148d6] Limpieza de lo que no es la librería. El paquete son los entornos Gymnasium; entrenar, evaluar y
+  grabar vídeo son demos que en algún momento se quitarán o se irán a otro sitio, y sus dependencias
+  (torch, stable-baselines3, sb3-contrib, opencv, tensorboard) no deben pesar sobre la librería.
+  Inventario: `examples/train_get_to_exit.py`, `evaluate_model.py`, `record_video.py` y
+  `benchmark_performance.py` importan SB3 (este solo `SubprocVecEnv`); `manual_control.py` no. Extras
+  `train`, `video` y `all` en `pyproject.toml`; menciones en `examples/README.md` (incl. `tensorboard
+  --logdir`), `docs/getting-started.md` l. 36 (`[train]`) y `docs/architecture.md` l. 608. Los tests
+  (`tests/unit`, `tests/integration`) no importan nada de eso. Decidir: qué demos quedan (¿solo
+  `manual_control` y un benchmark sin SB3, con el `VectorEnv` de Gymnasium?), adónde van las de
+  entrenamiento (otro repo, `examples/` fuera del paquete sin extras, o borrarlas tras el
+  reentrenamiento de Next, que hoy las usa), y si sobran extras. Repasar también tests y scripts
+  (`scripts/`, `feasibility/`) que ya no sirvan. Las entradas de `record_video.py` y del extra `all`
+  dependen de esta.

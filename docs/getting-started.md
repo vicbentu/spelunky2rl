@@ -31,8 +31,8 @@ or pass `game_dir="..."` when creating an environment.
 2. Install the package (Python 3.9+, in a virtual environment):
 
    ```bash
-   git clone https://github.com/vicbentu/spelunky2RL.git
-   cd spelunky2RL
+   git clone https://github.com/vicbentu/spelunky2rl.git
+   cd spelunky2rl
    pip install .              # add [render] for render(), [train] for the training examples
    ```
 
@@ -56,7 +56,7 @@ Nothing keeps running when no environment is open. The first start of a new game
 **Without Docker** (development): `scripts/setup_wine.sh` installs the same pieces for the host's Wine,
 then use `launcher="wine"` or `SPELUNKY2RL_LAUNCHER=wine`.
 
-**Editing the Lua mod**: set `SPELUNKY2RL_DEV_MOD=/path/to/spelunky2RL/src/spelunky2rl/mod/lua` and new
+**Editing the Lua mod**: set `SPELUNKY2RL_DEV_MOD=/path/to/spelunky2rl/src/spelunky2rl/mod/lua` and new
 environments load it instead of the copy in the image; no rebuild needed.
 
 ## Your First Environment
