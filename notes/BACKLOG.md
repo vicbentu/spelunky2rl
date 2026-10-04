@@ -77,10 +77,6 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   `package.loadlib` y la ruta de `script_path.lua`. Quitarla y pasar
   `tests/integration`. Solo probado bajo Wine en Docker; no la quité en la reorganización porque no
   puedo probarlo en Windows nativo.
-- [2026-10-03 20:57 @0641843] Al publicar en PyPI: las instrucciones de instalación dicen `git clone` + `pip install .`
-  (`readme.md` l. 26-27; `docs/getting-started.md` l. 34-36 y el "`pip install .`" de l. 264). Pasarlas a
-  `pip install spelunky2rl` (con `[render]`/`[train]`) y dejar el clon solo para quien quiera desarrollar
-  o editar el mod (`SPELUNKY2RL_DEV_MOD`, l. 59).
 - [2026-10-03 21:40 @0641843] Antes de publicar en PyPI: workflow `.github/workflows/pypi.yml` con Trusted Publishing. En
   tags `v*`: comprobar que el tag coincide con `spelunky2rl.version.__version__` (como `docker.yml`),
   `python -m build`, y `pypa/gh-action-pypi-publish` en un job con `environment: pypi` y

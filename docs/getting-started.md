@@ -31,12 +31,10 @@ or pass `game_dir="..."` when creating an environment.
 2. Install the package (Python 3.9+, in a virtual environment):
 
    ```bash
-   git clone https://github.com/vicbentu/spelunky2rl.git
-   cd spelunky2rl
-   pip install .              # add [render] for render(), [train] for the training examples
+   pip install spelunky2rl    # add [render] for render()
    ```
 
-3. Get the game image. Either pull it, or build it from the repo (a few minutes):
+3. Get the game image. Either pull it, or build it from a clone of the repo (a few minutes):
 
    ```bash
    spelunky2rl pull
@@ -52,6 +50,14 @@ or pass `game_dir="..."` when creating an environment.
 Each environment then runs `docker run --rm ...` on creation and kills its container on `close()`.
 Nothing keeps running when no environment is open. The first start of a new game version takes
 ~20 s while Playlunky builds its asset cache in `~/.cache/spelunky2rl`; later starts take ~8 s.
+
+**From source** (to work on the code or the mod, or to run `examples/`):
+
+```bash
+git clone https://github.com/vicbentu/spelunky2rl.git
+cd spelunky2rl
+pip install -e ".[dev]"    # add [render], and [train]/[video] for the training examples
+```
 
 **Without Docker** (development): `scripts/setup_wine.sh` installs the same pieces for the host's Wine,
 then use `launcher="wine"` or `SPELUNKY2RL_LAUNCHER=wine`.
@@ -261,6 +267,6 @@ Available log options:
 - That is the ghost; pass `time_ghost=False`
 
 **Import errors:**
-- Make sure you've installed the package: `pip install .`
+- Make sure you've installed the package: `pip install spelunky2rl`
 - Check that your virtual environment is activated
 - Verify all dependencies installed correctly
