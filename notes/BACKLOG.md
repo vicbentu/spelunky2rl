@@ -8,14 +8,6 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
 
 ## Next
 
-- [2026-09-28 12:53 @f5809d2] Reentrenar `get_to_exit` con el contrato corregido (terminated/truncated, seed
-  reproducible, entrada en `PRE_UPDATE`); el primer intento (`~/Desktop/tmp/spelunky2rl-runs/train_2026-09-28/`, 0 % de
-  éxito a 2,6 M pasos, 333 pasos/s) se hizo antes de arreglar la entrada.
-- [2026-09-28 12:53 @f5809d2] Comparar con los modelos de mayo de 2025: no están en esta máquina, hay que
-  copiarlos desde el PC de Windows.
-- [2026-09-28 13:53 @ce9dcf6] `examples/record_video.py` de punta a punta con un modelo entrenado (último
-  pendiente de headless/render).
-
 ## Bugs
 
 - [2026-09-28 13:53 @ce9dcf6] La interfaz de Overlunky (barra de menú + línea de contadores
@@ -39,6 +31,11 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   pasaron 7/7. No guardé qué test fue ni la salida del juego. `ConnectionResetError` es el proceso del
   juego muerto, no un error de Lua (eso sería `RuntimeError`). Para cazarlo: repetir la suite en bucle
   guardando la salida completa y `launcher.diagnostics()` del entorno que falle.
+- [2026-10-04 20:39 @188a940] `manual_control=True` no sirve con los launchers actuales: el mod solo deja de escribir la
+  entrada del agente (`input.lua`) para que el juego lea el teclado, pero `docker` y `wine` corren el
+  juego en un Xvfb que nadie ve y al que no llega ninguna tecla; el jugador se queda quieto.
+  `examples/manual_control.py` y `getting-started.md` (l. 198-222) prometen jugar con el teclado.
+  Arreglarlo (VNC con `x11vnc` al Xvfb, o en `wine` usar el `DISPLAY` del host) o quitar la opción.
 
 ## Improvements
 
@@ -122,7 +119,7 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   alcanzarse al pie de un pozo que no se puede subir. Si el camino real es un rodeo de más de 200 pasos,
   el entorno lo corta y el agente no puede aprenderlo. La recompensa por acercarse (`*0.1` sobre la
   diferencia de distancias) no es el problema: es una diferencia de potencial y no cambia la política
-  óptima. Mirar solo si el reentrenamiento (ver Next) se atasca: contar cuántos episodios acaban por
+  óptima. Mirar solo si un entrenamiento (en `spelunky2rl-experiments`) se atasca: contar cuántos episodios acaban por
   este corte y dónde está el jugador.
 - [2026-10-03 22:25 @e9148d6] Limpieza de lo que no es la librería. El paquete son los entornos Gymnasium; entrenar, evaluar y
   grabar vídeo son demos que en algún momento se quitarán o se irán a otro sitio, y sus dependencias
@@ -133,6 +130,5 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   --logdir`), `docs/getting-started.md` l. 36 (`[train]`) y `docs/architecture.md` l. 608. Los tests
   (`tests/unit`, `tests/integration`) no importan nada de eso. Decidir: qué demos quedan (¿solo
   `manual_control` y un benchmark sin SB3, con el `VectorEnv` de Gymnasium?), adónde van las de
-  entrenamiento (otro repo, `examples/` fuera del paquete sin extras, o borrarlas tras el
-  reentrenamiento de Next, que hoy las usa), y si sobran extras. Repasar también tests y scripts
+  entrenamiento (otro repo, `examples/` fuera del paquete sin extras, o borrarlas), y si sobran extras. Repasar también tests y scripts
   (`scripts/`, `feasibility/`) que ya no sirvan.
