@@ -32,7 +32,7 @@ train = [
 
 # render() on Linux (captures the instance's X display)
 render = [
-    "mss",
+    "mss>=10.2",
 ]
 
 # For recording videos (examples/record_video.py)

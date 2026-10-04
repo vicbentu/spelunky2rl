@@ -104,12 +104,6 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
 - [2026-10-03 21:40 @0641843] El extra `all` de `pyproject.toml` repite a mano los paquetes de `train`, `render` y `video`:
   cualquier paquete nuevo hay que ponerlo en dos sitios. Mejor definir
   `all = ["spelunky2rl[train,render,video]"]` para que no se desincronicen.
-- [2026-10-03 22:25 @e9148d6] `engine/frames/x11.py:15`: cambiar `mss.mss(display=display)` por `mss.MSS(display=display)` y fijar
-  `"mss>=10.2"` en el extra `render` (y en `all`). `mss.MSS` existe desde mss 10.2.0 (abril de 2026;
-  probado: 10.1.0 no lo tiene) y desde esa versión `mss.mss` da `DeprecationWarning` y se quitará. `MSS`
-  acepta `display=` como argumento con nombre y tiene `grab`, `monitors` y `close`: el resto de
-  `X11FrameSource` no cambia. mss 10.2 pide Python >=3.9, igual que el paquete. Verificar con
-  `test_render_returns_game_frames` (`tests/integration`).
 - [2026-10-03 22:25 @e9148d6] Al publicar en PyPI, en el mismo commit que prepara la versión y justo antes de crear el tag: subir a
   `0.1.1` `__version__` (`src/spelunky2rl/version.py`) y `MOD_VERSION`
   (`src/spelunky2rl/mod/lua/spelunky2rl/protocol.lua:8`; solo sale en el mensaje de error de

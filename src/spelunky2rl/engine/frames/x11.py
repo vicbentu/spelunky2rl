@@ -12,7 +12,7 @@ class X11FrameSource(FrameSource):
         except ImportError:
             raise ImportError("render_enabled=True on Linux needs mss: pip install 'spelunky2rl[render]'") from None
         self.display = display
-        self._sct = mss.mss(display=display)
+        self._sct = mss.MSS(display=display)
 
     def get_frame(self) -> np.ndarray:
         shot = self._sct.grab(self._sct.monitors[0])
