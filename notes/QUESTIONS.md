@@ -10,19 +10,6 @@ aplica. `@sha` es el commit en que estaba el código al escribir la entrada.
 
 ## Decidido sin ti
 
-### game-image-unpublished · [2026-09-28 13:18 @4a2a9cf] La imagen del juego no está publicada
-
-El nombre por defecto es `ghcr.io/vicbentu/spelunky2rl-game:<versión>` y `.github/workflows/docker.yml`
-la publica al crear un tag `v<versión>`. No he hecho push ni creado tags (es una acción externa).
-Mientras tanto, `spelunky2rl pull` falla y hay que construirla en local
-(`docker build -f docker/Dockerfile -t ghcr.io/vicbentu/spelunky2rl-game:0.1.0 .`); así la he probado yo.
-
-Coste: un externo no tiene todavía el "un comando" del objetivo de setup trivial. Tras el primer push
-en GHCR hay que marcar el paquete como público en la configuración del paquete en GitHub.
-
-Para cambiarlo: otro registro (Docker Hub) = cambiar `DEFAULT_IMAGE` en `engine/launchers/docker.py` y
-el login del workflow.
-
 ### overlunky-whip-pinned-by-hash · [2026-09-28 13:18 @4a2a9cf] Overlunky: build "whip" fijada por hash, no por versión
 
 Overlunky solo publica una build continua (`whip`) que se reemplaza en el mismo URL.

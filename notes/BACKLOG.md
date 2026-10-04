@@ -15,8 +15,6 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   copiarlos desde el PC de Windows.
 - [2026-09-28 13:53 @ce9dcf6] `examples/record_video.py` de punta a punta con un modelo entrenado (último
   pendiente de headless/render).
-- [2026-09-30 00:20 @222ac52] Publicar la imagen del juego (tag `v<versión>` →
-  `.github/workflows/docker.yml`); pendiente de push, ver `Q/game-image-unpublished` en `QUESTIONS.md`.
 
 ## Bugs
 
@@ -77,13 +75,6 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   `package.loadlib` y la ruta de `script_path.lua`. Quitarla y pasar
   `tests/integration`. Solo probado bajo Wine en Docker; no la quité en la reorganización porque no
   puedo probarlo en Windows nativo.
-- [2026-10-04 02:08 @7bb7227] Publicar la 0.1.1 (todo lo de dentro del repo está hecho; quedan pasos fuera, a mano):
-  1) en pypi.org, "Add a new pending publisher": proyecto `spelunky2rl`, owner `vicbentu`, repo
-  `spelunky2rl`, workflow `pypi.yml`, entorno `pypi`; 2) mergear `dev` a `main`; 3) `git tag v0.1.1`
-  sobre `main` y push del tag: lanza `pypi.yml` y `docker.yml`; 4) en GitHub, marcar como público el
-  paquete `spelunky2rl-game` de GHCR (ver `Q/game-image-unpublished`). Después, comprobar que
-  `pip install spelunky2rl` + `spelunky2rl pull` funcionan en un venv limpio y que el enlace a `LICENSE`
-  del README (hoy 404: la licencia no está en `main`) responde.
 
 ## Ideas
 
