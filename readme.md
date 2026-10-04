@@ -23,13 +23,13 @@ The game runs headless in Docker on Linux, one container per environment (Window
 Either way you need your own copy of Spelunky 2 (Steam is only needed to download it).
 
 ```bash
-git clone https://github.com/vicbentu/spelunky2RL.git && cd spelunky2RL
-pip install .
+pip install spelunky2rl # add [render] for render()
 spelunky2rl pull      # Linux: the game runtime image (Wine, Playlunky, Overlunky; not the game), or build it
 spelunky2rl doctor    # checks Docker, GPU, the image and your game folder
 ```
 
-See [Getting Started](docs/getting-started.md) for the details.
+To work on the code or the Lua mod, clone the repo and `pip install -e ".[dev]"`.
+See [Getting Started](https://github.com/vicbentu/spelunky2rl/blob/main/docs/getting-started.md) for the details.
 
 ### Basic Usage
 
@@ -57,9 +57,9 @@ env.close()
 
 ## Documentation
 
-- **[Getting Started](docs/getting-started.md)** - Installation, configuration, and first steps
-- **[Environments Guide](docs/environments.md)** - Creating and customizing environments
-- **[Architecture Guide](docs/architecture.md)** - Technical details and internal workings
+- **[Getting Started](https://github.com/vicbentu/spelunky2rl/blob/main/docs/getting-started.md)** - Installation, configuration, and first steps
+- **[Environments Guide](https://github.com/vicbentu/spelunky2rl/blob/main/docs/environments.md)** - Creating and customizing environments
+- **[Architecture Guide](https://github.com/vicbentu/spelunky2rl/blob/main/docs/architecture.md)** - Technical details and internal workings
 
 ## Examples
 
@@ -93,3 +93,9 @@ This project would not be possible without the incredible work of the spelunky-f
 - **[modlunky2](https://github.com/spelunky-fyi/modlunky2)** - Provides the mod management infrastructure and tools that make setting up and running SpelunkyRL straightforward.
 
 Special thanks to the entire spelunky-fyi community for maintaining these excellent tools and fostering the Spelunky modding ecosystem.
+
+## License
+
+MIT, see [LICENSE](https://github.com/vicbentu/spelunky2rl/blob/main/LICENSE). Bundled third-party code keeps its own license: luasocket (MIT,
+`src/spelunky2rl/mod/lua/luasocket/license.txt`) and overlunky's `entities-hierarchy.md` (MIT).
+Spelunky 2 itself is not included: each user provides their own copy of the game.

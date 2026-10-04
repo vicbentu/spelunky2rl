@@ -10,15 +10,6 @@ aplica. `@sha` es el commit en que estaba el código al escribir la entrada.
 
 ## Decidido sin ti
 
-### pyproject-license · [2026-09-28 12:55 @4a53a57] Sin campo `license` en `pyproject.toml`
-
-No he puesto licencia: el repo no tiene fichero LICENSE y elegirla es cosa tuya.
-
-Coste: PyPI y los usuarios no saben bajo qué términos pueden usar el código. `luasocket/` trae su
-propia licencia (MIT) y `entities-hierarchy.md` viene de overlunky (MIT).
-
-Para cambiarlo: añadir `LICENSE` y `license = "MIT"` (o la que elijas) en `[project]`.
-
 ### game-image-unpublished · [2026-09-28 13:18 @4a2a9cf] La imagen del juego no está publicada
 
 El nombre por defecto es `ghcr.io/vicbentu/spelunky2rl-game:<versión>` y `.github/workflows/docker.yml`

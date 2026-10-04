@@ -1,0 +1,46 @@
+name: PyPI
+
+# Publishes the package to PyPI on version tags (v0.1.1 -> spelunky2rl 0.1.1) with Trusted Publishing:
+# no token, PyPI trusts this workflow (repo vicbentu/spelunky2rl, workflow pypi.yml, environment pypi).
+# The tag must match spelunky2rl.version; the same tag publishes the game image (docker.yml).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check the tag matches the package version
+        run: |
+          version=$(python3 -c "exec(open('src/spelunky2rl/version.py').read()); print(__version__)")
+          if [[ "${GITHUB_REF#refs/tags/v}" != "$version" ]]; then
+            echo "tag ${GITHUB_REF#refs/tags/} does not match package version $version" >&2; exit 1
+          fi
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check --strict dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

@@ -77,19 +77,13 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   `package.loadlib` y la ruta de `script_path.lua`. Quitarla y pasar
   `tests/integration`. Solo probado bajo Wine en Docker; no la quité en la reorganización porque no
   puedo probarlo en Windows nativo.
-- [2026-10-01 22:12 @13fadde] `engine/frames/x11.py:15`: `mss.mss(display=display)` da `DeprecationWarning: mss.mss is
-  deprecated and will be removed in a future release; use mss.MSS instead` (visto en
-  `test_render_returns_game_frames` con mss 10.x). Cambiar a `mss.MSS(display=display)` y comprobar la
-  versión mínima de `mss` que lo tiene para fijarla en el extra `render` de `pyproject.toml`.
-- [2026-10-03 15:11 @0880a21] El extra `train` de `pyproject.toml` (torch, stable-baselines3, sb3-contrib) no trae
-  `tensorboard`, y `examples/train_get_to_exit.py` pasa `tensorboard_log=`: con solo `.[train]` el
-  ejemplo falla al empezar `learn()` con `ImportError: Trying to log data to tensorboard but tensorboard
-  is not installed`. Añadir `"tensorboard"` al extra `train`.
-- [2026-10-03 15:26 @0880a21] `examples/record_video.py`: los vídeos salen con rojo y azul cambiados (la tierra de 1-1
-  sale azul). `env.render()` devuelve RGB (`engine/frames/x11.py`, `BGRA -> RGB`) y `cv2.VideoWriter`
-  espera BGR. Escribir `cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)`. Además usa `frames_per_step=2` y
-  `FPS = 30`: un modelo entrenado con `train_get_to_exit.py` (6) ve otro juego y el vídeo va a 1,5x;
-  con 6 pasos, `FPS = 10` es tiempo real.
+- [2026-10-04 02:08 @7bb7227] Publicar la 0.1.1 (todo lo de dentro del repo está hecho; quedan pasos fuera, a mano):
+  1) en pypi.org, "Add a new pending publisher": proyecto `spelunky2rl`, owner `vicbentu`, repo
+  `spelunky2rl`, workflow `pypi.yml`, entorno `pypi`; 2) mergear `dev` a `main`; 3) `git tag v0.1.1`
+  sobre `main` y push del tag: lanza `pypi.yml` y `docker.yml`; 4) en GitHub, marcar como público el
+  paquete `spelunky2rl-game` de GHCR (ver `Q/game-image-unpublished`). Después, comprobar que
+  `pip install spelunky2rl` + `spelunky2rl pull` funcionan en un venv limpio y que el enlace a `LICENSE`
+  del README (hoy 404: la licencia no está en `main`) responde.
 
 ## Ideas
 
@@ -139,3 +133,15 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   diferencia de distancias) no es el problema: es una diferencia de potencial y no cambia la política
   óptima. Mirar solo si el reentrenamiento (ver Next) se atasca: contar cuántos episodios acaban por
   este corte y dónde está el jugador.
+- [2026-10-03 22:25 @e9148d6] Limpieza de lo que no es la librería. El paquete son los entornos Gymnasium; entrenar, evaluar y
+  grabar vídeo son demos que en algún momento se quitarán o se irán a otro sitio, y sus dependencias
+  (torch, stable-baselines3, sb3-contrib, opencv, tensorboard) no deben pesar sobre la librería.
+  Inventario: `examples/train_get_to_exit.py`, `evaluate_model.py`, `record_video.py` y
+  `benchmark_performance.py` importan SB3 (este solo `SubprocVecEnv`); `manual_control.py` no. Extras
+  `train`, `video` y `all` en `pyproject.toml`; menciones en `examples/README.md` (incl. `tensorboard
+  --logdir`), `docs/getting-started.md` l. 36 (`[train]`) y `docs/architecture.md` l. 608. Los tests
+  (`tests/unit`, `tests/integration`) no importan nada de eso. Decidir: qué demos quedan (¿solo
+  `manual_control` y un benchmark sin SB3, con el `VectorEnv` de Gymnasium?), adónde van las de
+  entrenamiento (otro repo, `examples/` fuera del paquete sin extras, o borrarlas tras el
+  reentrenamiento de Next, que hoy las usa), y si sobran extras. Repasar también tests y scripts
+  (`scripts/`, `feasibility/`) que ya no sirvan.

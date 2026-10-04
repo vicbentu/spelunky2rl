@@ -40,7 +40,7 @@ MODEL_PATH = "./models_get_to_exit/final_model.zip"
 # Recording settings
 DURATION = 30           # Recording duration in seconds
 OUTPUT_DIR = "./videos"  # Directory to save videos
-FPS = 30                # Target FPS for output video
+FPS = 10                # One video frame per step: 60 game frames/s / frames_per_step=6 = real time
 USE_LSTM = True         # Set to True if model uses RecurrentPPO, False for PPO
 DETERMINISTIC = True    # Use deterministic actions (recommended for videos)
 
@@ -51,7 +51,7 @@ def record_agent_video(
     model_path: str,
     duration: int = 30,
     output_dir: str = "./videos",
-    fps: int = 30,
+    fps: int = 10,
     use_lstm: bool = True,
     deterministic: bool = True
 ):
@@ -90,7 +90,7 @@ def record_agent_video(
         env = SpelunkyEnv(
             # The game folder comes from SPELUNKY2RL_GAME_DIR (or pass game_dir="...")
 
-            frames_per_step=2,      # Capture more frames for smoother video
+            frames_per_step=6,      # Same as train_get_to_exit.py: the model acts at the pace it learned
             speedup=False,          # Don't speed up (real-time looks better)
             render_enabled=True,    # ENABLE FRAME GRABBING
             manual_control=False,
@@ -161,7 +161,7 @@ def record_agent_video(
 
             # Capture and write frame
             frame = env.render()
-            video_writer.write(frame)
+            video_writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))  # render() is RGB, OpenCV wants BGR
             frame_count += 1
 
             # Reset if episode ends

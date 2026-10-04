@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,9 @@ name = "spelunky2rl"
 dynamic = ["version"]
 description = "Gymnasium environments for Spelunky 2 reinforcement learning"
 readme = "readme.md"
+authors = [{name = "vicbentu"}]
+license = "MIT"
+license-files = ["LICENSE", "src/spelunky2rl/mod/lua/luasocket/license.txt"]
 requires-python = ">=3.9"
 
 # Core dependencies - required for basic SpelunkyRL functionality
@@ -15,6 +18,11 @@ dependencies = [
     "numpy",
     "psutil",
 ]
+
+[project.urls]
+Repository = "https://github.com/vicbentu/spelunky2rl"
+Documentation = "https://github.com/vicbentu/spelunky2rl/tree/main/docs"
+Issues = "https://github.com/vicbentu/spelunky2rl/issues"
 
 [project.scripts]
 spelunky2rl = "spelunky2rl.cli:main"
@@ -30,7 +38,7 @@ train = [
 
 # render() on Linux (captures the instance's X display)
 render = [
-    "mss",
+    "mss>=10.2",
 ]
 
 # For recording videos (examples/record_video.py)
@@ -46,11 +54,7 @@ dev = [
 
 # Install everything
 all = [
-    "mss",
-    "torch",
-    "stable-baselines3",
-    "sb3-contrib",
-    "opencv-python",
+    "spelunky2rl[train,render,video]",
 ]
 
 [tool.setuptools.dynamic]
