@@ -12,7 +12,8 @@ import numpy as np
 from ..tools.id2name import id2name
 from .frames import FrameSource
 from .launchers import Launcher, make_launcher
-from .protocol import Connection, check_hello
+from .fields import resolve_fields
+from .protocol import Connection, StateLayout, check_hello
 
 HELLO_TIMEOUT = 15.0  # the mod says hello right after connecting
 
@@ -71,6 +72,10 @@ class SpelunkyRLEngine(gym.Env):
         if unknown:
             raise TypeError(f"Unknown reset options: {', '.join(unknown)}. Known: {', '.join(sorted(known))}")
 
+        # before launching anything: a wrong field name or parameter fails here
+        self.fields = resolve_fields(getattr(self, "data_to_send", []))
+        self.layout: Optional[StateLayout] = None
+
         self.game_dir = game_dir or spelunky_dir
         self.frames_per_step = frames_per_step
         self.reset_options = getattr(self, "reset_options", {}) | kwargs
@@ -105,7 +110,9 @@ class SpelunkyRLEngine(gym.Env):
         super().reset(seed=seed)
         self._game_reset(seed=seed, **(self.reset_options | (options or {}) | kwargs))
 
-        gamestate = self._receive_dict()
+        header, data = self.server.receive()
+        self.layout = StateLayout(header["layout"])
+        gamestate = self.layout.decode(data)
         self.last_gamestate = gamestate
         observation = self.gamestate_to_observation(gamestate)
         return observation, {}
@@ -122,10 +129,10 @@ class SpelunkyRLEngine(gym.Env):
             "command": "step",
             "input": action,
             "frames": self.frames_per_step,
-            "data_to_send": getattr(self, "data_to_send", [])
         })
 
-        gamestate = self._receive_dict()
+        _, data = self.server.receive()
+        gamestate = self.layout.decode(data)
 
         info = {
             "success": False
@@ -175,7 +182,7 @@ class SpelunkyRLEngine(gym.Env):
         try:
             with self.launcher.starting(self.startup_timeout):
                 self.server = self._launch_and_accept(port)
-                hello = check_hello(self.server.receive(timeout=HELLO_TIMEOUT))
+                hello = check_hello(self.server.receive(timeout=HELLO_TIMEOUT)[0])
         except BaseException:
             self.close()
             raise
@@ -235,7 +242,7 @@ class SpelunkyRLEngine(gym.Env):
             "state_updates": state_updates,
             "seed": seed,
             "ent_types_to_destroy": list(ent_types_to_destroy),
-            "data_to_send": self.data_to_send,
+            "fields": self.fields,
             "manual_control": manual_control,
             "god_mode": god_mode,
             "hp": hp,
@@ -258,9 +265,6 @@ class SpelunkyRLEngine(gym.Env):
 
     def _send_dict(self, payload: Dict[str, Any]) -> None:
         self.server.send(payload)
-
-    def _receive_dict(self) -> Dict[str, Any]:
-        return self.server.receive()
 
 
     ############ Render ############
@@ -292,5 +296,5 @@ class SpelunkyRLEngine(gym.Env):
                         formatted_row = " ".join(f"{cell:>3}" for cell in row)
                         f.write(f"{formatted_row}\n")
                 elif field == "entity_count":
-                    type_counts = Counter(id2name(entity[4])["name"] for entity in gamestate["entity_info"])
+                    type_counts = Counter(id2name(int(entity[4]))["name"] for entity in gamestate["entity_info"])
                     f.write(f"Entities: {type_counts}\n")
