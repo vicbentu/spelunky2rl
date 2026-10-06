@@ -17,7 +17,7 @@ I=/run/inst
 mkdir -p "$I/Mods/Packs"
 for f in /game/*; do
     case "$(basename "$f")" in
-        steam_api64.dll|steam_appid.txt|steam_settings|Overlunky|overlunky.ini|playlunky.ini|local.cfg|Mods) ;;
+        steam_api64.dll|steam_appid.txt|steam_settings|playlunky.ini|local.cfg|Mods) ;;
         spelunky.log|full_output.log) ;;
         settings.cfg|savegame.sav|input.cfg) cp "$f" "$I/" ;;
         *) ln -s "$f" "$I/" ;;
@@ -27,11 +27,12 @@ A=/opt/assets
 ln -s "$A/steam_api64.dll" "$I/steam_api64.dll"
 echo 418530 > "$I/steam_appid.txt"
 mkdir -p "$I/steam_settings" && echo 418530 > "$I/steam_settings/steam_appid.txt"
-ln -s "$A/Overlunky" "$I/Overlunky"
-# local.cfg holds the video settings: a window filling the Xvfb screen (fullscreen under Wine+Xvfb
-# leaves the Vulkan surface at 1x1 and every frame black), no vsync, no audio
-cp "$A/config/overlunky.ini" "$A/config/playlunky.ini" "$A/config/local.cfg" "$I/"
-# Playlunky writes inside mod folders; the pack only holds lua/ so there is nothing for it to convert
+# local.cfg holds the video settings: a borderless window filling the Xvfb screen (fullscreen under
+# Wine+Xvfb leaves the Vulkan surface at 1x1 and every frame black; a framed window leaves a black
+# band where the title bar would be), no vsync, no audio
+cp "$A/config/playlunky.ini" "$A/config/local.cfg" "$I/"
+# Playlunky runs the pack's main.lua (patched to allow it, see docker/playlunky-patch.md) and writes
+# inside mod folders; the pack only holds lua/ so there is nothing for it to convert
 ln -s /opt/mod "$I/Mods/Packs/spelunky2rl"
 echo spelunky2rl > "$I/Mods/Packs/load_order.txt"
 [ -d /cache ] && ln -s /cache "$I/Mods/Packs/.db"
@@ -46,6 +47,6 @@ export DISPLAY=":$DISPLAYNUM" Spelunky_RL_Port="$PORT"
 echo "spelunky2rl: port=$PORT display=:$DISPLAYNUM vulkan=$(vulkaninfo --summary 2>/dev/null | grep -m1 deviceName | cut -d= -f2 | xargs)"
 
 cd "$A/playlunky"
-wine playlunky_launcher.exe '--exe_dir=Z:\run\inst' --overlunky
+wine playlunky_launcher.exe '--exe_dir=Z:\run\inst'
 # The launcher exits as soon as Spel2.exe is running; keep the container alive with the game
 wineserver -w

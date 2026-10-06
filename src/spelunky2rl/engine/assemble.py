@@ -11,8 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 # What we provide ourselves instead of taking it from the user's folder
-PROVIDED = {"steam_api64.dll", "steam_appid.txt", "steam_settings", "Overlunky", "overlunky.ini",
-            "playlunky.ini", "local.cfg", "Mods"}
+PROVIDED = {"steam_api64.dll", "steam_appid.txt", "steam_settings", "playlunky.ini", "local.cfg", "Mods"}
 # Logs we do not want to carry over (spelunky.log can be huge)
 SKIPPED = {"spelunky.log", "full_output.log"}
 # Small files the game rewrites: real copies, never links into the user's folder
@@ -27,13 +26,12 @@ def mod_dir() -> Path:
 
 
 def config_dir() -> Path:
-    """overlunky.ini / playlunky.ini templates."""
+    """playlunky.ini / local.cfg templates."""
     return Path(str(files("spelunky2rl") / "engine" / "launchers" / "config"))
 
 
-def assemble_instance(game_dir: Path, out_dir: Path, steam_api: Path, overlunky_dir: Path,
-                      mod: Optional[Path] = None, cache: Optional[Path] = None) -> Path:
-    """Build out_dir so that out_dir/Spel2.exe runs the game with Goldberg, Overlunky and our mod."""
+def assemble_instance(game_dir: Path, out_dir: Path, steam_api: Path, mod: Optional[Path] = None, cache: Optional[Path] = None) -> Path:
+    """Build out_dir so that out_dir/Spel2.exe runs the game with Goldberg and our mod."""
     game_dir, out_dir = Path(game_dir), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     for entry in game_dir.iterdir():
@@ -48,9 +46,8 @@ def assemble_instance(game_dir: Path, out_dir: Path, steam_api: Path, overlunky_
     (out_dir / "steam_appid.txt").write_text(STEAM_APP_ID + "\n")
     (out_dir / "steam_settings").mkdir()
     (out_dir / "steam_settings" / "steam_appid.txt").write_text(STEAM_APP_ID + "\n")
-    os.symlink(overlunky_dir, out_dir / "Overlunky")
-    # local.cfg: windowed and sized to the Xvfb screen, see docker/entrypoint.sh
-    for name in ("overlunky.ini", "playlunky.ini", "local.cfg"):
+    # local.cfg: a borderless window sized to the Xvfb screen, see docker/entrypoint.sh
+    for name in ("playlunky.ini", "local.cfg"):
         shutil.copy(config_dir() / name, out_dir / name)
 
     packs = out_dir / "Mods" / "Packs"

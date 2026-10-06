@@ -126,9 +126,36 @@ def test_reset_leaves_nothing_of_the_previous_level():
         env.reset(seed=28)
         for i in range(50):
             env.step([2 if (i // 25) % 2 == 0 else 0, 1, int(i % 8 == 0)])
-        assert first_state(env, 29) == fresh
+        distance, map_info = first_state(env, 29)
+        assert distance == fresh[0] and np.array_equal(map_info, fresh[1])
     finally:
         env.close()
+
+
+def test_a_wider_view_holds_the_default_one():
+    """map_info and entity_info take their view size from Python; the default 21x11 view is the
+    centre of a 41x21 one."""
+
+    class Wide(GetToExit):
+        data_to_send = {"map_info": {"width": 41, "height": 21}, "entity_info": {"width": 41, "height": 21}}
+
+        def gamestate_to_observation(self, gamestate):
+            return {}
+
+    def first_state(cls, seed):
+        env = cls(**FAST, god_mode=True)
+        try:
+            env.reset(seed=seed)
+            return env.last_gamestate
+        finally:
+            env.close()
+
+    for seed in (3, 5):
+        default, wide = first_state(DefaultEnv, seed), first_state(Wide, seed)
+        assert wide["map_info"].shape == (21, 41)
+        assert np.array_equal(wide["map_info"][5:16, 10:31], default["map_info"])
+        assert (np.abs(wide["entity_info"][:, 0]) < 21.5).all() and (np.abs(wide["entity_info"][:, 1]) < 11.5).all()
+        assert len(wide["entity_info"]) >= len(default["entity_info"])
 
 
 def test_reset_from_the_death_screen():

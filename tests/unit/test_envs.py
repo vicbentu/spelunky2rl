@@ -30,8 +30,7 @@ def test_time_limit_truncates_without_terminating(make_env, name):
     rng = np.random.default_rng(0)
 
     def respond(message, steps):
-        return make_gamestate(rng, time=60 if message["command"] == "reset" else 60 * 90,
-                              data_to_send=message["data_to_send"])
+        return make_gamestate(rng, time=60 if message["command"] == "reset" else 60 * 90)
 
     env = make_env(env_class(name), respond)
     env.reset(seed=0)
@@ -45,8 +44,7 @@ def test_death_terminates(make_env, name):
     rng = np.random.default_rng(0)
 
     def respond(message, steps):
-        return make_gamestate(rng, health=4 if message["command"] == "reset" else 0,
-                              data_to_send=message["data_to_send"])
+        return make_gamestate(rng, health=4 if message["command"] == "reset" else 0)
 
     env = make_env(env_class(name), respond)
     env.reset(seed=0)
@@ -59,7 +57,7 @@ def test_enemy_killer_rewards_kills_positively(make_env):
     rng = np.random.default_rng(0)
 
     def respond(message, steps):
-        return make_gamestate(rng, dead_enemies=steps, data_to_send=message["data_to_send"])
+        return make_gamestate(rng, dead_enemies=steps)
 
     env = make_env(env_class("enemy_killer"), respond)
     env.reset(seed=0)
@@ -73,8 +71,7 @@ def test_get_to_exit_terminates_in_the_exit_cell_only(make_env, dist_to_goal, su
     rng = np.random.default_rng(0)
 
     def respond(message, steps):
-        return make_gamestate(rng, dist_to_goal=10 if steps == 0 else dist_to_goal,
-                              data_to_send=message["data_to_send"])
+        return make_gamestate(rng, dist_to_goal=10 if steps == 0 else dist_to_goal)
 
     env = make_env(env_class("get_to_exit"), respond)
     env.reset(seed=0)
@@ -94,7 +91,7 @@ def test_get_to_exit_truncation_penalty_scales_with_frames_per_step(make_env, fr
 
     def respond(message, steps):
         # no progress at all: after 200 steps the env truncates
-        return make_gamestate(rng, time=time, dist_to_goal=10, data_to_send=message["data_to_send"])
+        return make_gamestate(rng, time=time, dist_to_goal=10)
 
     env = make_env(env_class("get_to_exit"), respond, frames_per_step=frames_per_step)
     env.reset(seed=0)

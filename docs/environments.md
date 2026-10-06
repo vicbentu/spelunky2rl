@@ -200,7 +200,7 @@ observation_space = Dict({
 ```
 
 **Common observations**:
-- `map_info` - 11×21 grid of entity IDs around player (requested via `data_to_send`)
+- `map_info` - 11×21 grid of entity IDs around player (requested via `data_to_send`; the size can change)
 - `char_state` - Player animation state (0-22, see [overlunky docs](https://spelunky-fyi.github.io/overlunky/))
 - `can_jump` - Whether player can currently jump
 - `dist_to_goal` - Distance to level exit (if requested)
@@ -208,7 +208,8 @@ observation_space = Dict({
 
 ### 2. Data to Send
 
-Specifies which data to request from the Lua script. This affects performance - only request what you need.
+Specifies which data to request from the Lua script, beyond `basic_info` (always sent). This affects
+performance - only request what you need.
 
 ```python
 data_to_send = [
@@ -221,7 +222,20 @@ data_to_send = [
 **Available options**:
 - `"map_info"` - Terrain grid around player
 - `"dist_to_goal"` - Distance to level exit
-- `"entity_info"` - List of nearby entities with position, velocity, type, etc.
+- `"entity_info"` - Nearby entities with position, velocity, type, etc.
+
+`map_info` and `entity_info` cover a view centred on the player, 21 tiles wide and 11 high by
+default. To change it, give the fields as a dict of parameters (odd sizes):
+
+```python
+data_to_send = {
+    "map_info": {"width": 41, "height": 21},
+    "entity_info": {"width": 41, "height": 21},
+    "dist_to_goal": {},
+}
+```
+
+A wrong field name or parameter is a `ValueError` when the environment is created.
 
 ### 3. Reward Function
 
@@ -269,9 +283,9 @@ The engine sets `done` itself when the player dies or the level is completed.
         "win": int,            # 1 if level completed
         "dead_enemies": int,   # Total enemies killed
     },
-    "map_info": [[int]],       # If requested
-    "dist_to_goal": float,     # If requested
-    "entity_info": [list],     # If requested
+    "map_info": np.ndarray,    # If requested: int32, (height, width)
+    "dist_to_goal": int,       # If requested
+    "entity_info": np.ndarray, # If requested: float64, (entities, 7)
 }
 ```
 
@@ -446,7 +460,8 @@ env = GoldRushEnv(
 
 ### Working with Entity Info
 
-When you request `"entity_info"` in `data_to_send`, you get a list of nearby entities:
+When you request `"entity_info"` in `data_to_send`, you get a numpy array with one row per nearby
+entity:
 
 ```python
 data_to_send = ["map_info", "entity_info"]

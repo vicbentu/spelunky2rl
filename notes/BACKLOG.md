@@ -1,33 +1,12 @@
 # Backlog
 
 Todo lo no empezado: `- [ts @sha] contexto suficiente para retomarlo en frío`. El sha es el commit en que
-estaba el código al escribirlo (`git show <sha>:<ruta>`). *Next* es lo elegido, en orden; lo primero es lo
-que pasa a `PLAN.md` cuando acabe el objetivo en marcha. Después, según cuánto se sabe: Bugs (algo está
-mal), Improvements (se sabe exactamente qué hacer, solo falta el cuándo), Ideas (vale la pena mirarlo; aún
-no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
-
-## Next
-
-- [2026-09-28 12:53 @f5809d2] Reentrenar `get_to_exit` con el contrato corregido (terminated/truncated, seed
-  reproducible, entrada en `PRE_UPDATE`); el primer intento (`~/Desktop/tmp/spelunky2rl-runs/train_2026-09-28/`, 0 % de
-  éxito a 2,6 M pasos, 333 pasos/s) se hizo antes de arreglar la entrada.
-- [2026-09-28 12:53 @f5809d2] Comparar con los modelos de mayo de 2025: no están en esta máquina, hay que
-  copiarlos desde el PC de Windows.
-- [2026-09-28 13:53 @ce9dcf6] `examples/record_video.py` de punta a punta con un modelo entrenado (último
-  pendiente de headless/render).
-- [2026-09-30 00:20 @222ac52] Publicar la imagen del juego (tag `v<versión>` →
-  `.github/workflows/docker.yml`); pendiente de push, ver `Q/game-image-unpublished` en `QUESTIONS.md`.
+estaba el código al escribirlo (`git show <sha>:<ruta>`). Por secciones, según cuánto se sabe: Bugs (algo está mal),
+Improvements (se sabe exactamente qué hacer, solo falta el cuándo), Ideas (vale la pena mirarlo; aún no se
+sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
 
 ## Bugs
 
-- [2026-09-28 13:53 @ce9dcf6] La interfaz de Overlunky (barra de menú + línea de contadores
-  "FRAME/START/TOTAL…", ~40 px arriba) sale en los frames de `render()`. Probado sin éxito:
-  `draw_hud/draw_hotbar/draw_script_messages = 0` y `tabs_open = []` en `overlunky.ini`; un `imgui.ini`
-  propio; F11 (`hide_ui`) con `xdotool windowfocus key F11`; `imgui_playlunky.ini` con la ventana en
-  `Pos=-5000,-5000` y `Collapsed=1` hace que el juego caiga con un page fault. `hide_ui` solo se cambia
-  con la tecla (`src/injected/ui.cpp` de overlunky). Vías sin probar: recortar las filas superiores en
-  `X11FrameSource`, pedir upstream una opción de ini, o capturar dentro del juego (Fase 6 del plan
-  antiguo, ver Ideas).
 - [2026-09-30 00:17 @222ac52] `main.lua`: `count_dead_enemies` solo mira la capa frontal (enemigos
   muertos en la capa trasera no cuentan). Hoy `dead_enemies` en `spelunky2rl/observations.lua`.
 - [2026-10-01 20:52 @2880e06] `main.lua`, `pf_refresh`: `get_entities_by(0, MASK.FLOOR, 0)` solo lee la
@@ -35,17 +14,16 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   `map_info` sale todo a 0; `dist_to_goal` se busca en el tablero de la capa frontal. Leído en el
   código, sin reproducir (entrar por una puerta a la capa trasera y mirar `map_info`). Mismo origen que
   el de `count_dead_enemies`. Hoy `refresh` en `spelunky2rl/pathfinding.lua`.
-- [2026-10-03 14:05 @766e650] Suite de integración: un `ConnectionResetError: [Errno 104]` en 1 de 6
-  ejecuciones completas (`pytest tests/integration` con `SPELUNKY2RL_DEV_MOD`, árbol con los arreglos
-  de `dist_to_goal` sin commitear); esa ejecución tardó 256 s en vez de ~89 s y las cinco siguientes
-  pasaron 7/7. No guardé qué test fue ni la salida del juego. `ConnectionResetError` es el proceso del
-  juego muerto, no un error de Lua (eso sería `RuntimeError`). Para cazarlo: repetir la suite en bucle
-  guardando la salida completa y `launcher.diagnostics()` del entorno que falle.
+- [2026-10-04 20:39 @188a940] `manual_control=True` no sirve con los launchers actuales: el mod solo deja de escribir la
+  entrada del agente (`input.lua`) para que el juego lea el teclado, pero `docker` y `wine` corren el
+  juego en un Xvfb que nadie ve y al que no llega ninguna tecla; el jugador se queda quieto.
+  `examples/manual_control.py` y `getting-started.md` (l. 198-222) prometen jugar con el teclado.
+  Arreglarlo (VNC con `x11vnc` al Xvfb, o en `wine` usar el `DISPLAY` del host) o quitar la opción.
 
 ## Improvements
 
 - [2026-09-28 12:53 @abf1a96] Comprobar la versión de `Spel2.exe` al arrancar y fallar con un mensaje
-  claro si no es la que soportan las versiones fijadas de Playlunky/Overlunky (hoy una actualización del
+  claro si no es la que soporta la versión fijada de Playlunky (hoy una actualización del
   juego rompe los offsets y el síntoma es que el mod no carga: timeout sin explicación). `spelunky2rl
   doctor` ya calcula el hash de build (`15a31692700c3c94` en esta máquina): guardar la lista de hashes
   soportados junto a las versiones fijadas de la imagen, comprobarla antes de lanzar y en `doctor`, y
@@ -72,18 +50,11 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   Hoy `read_player` en `spelunky2rl/observations.lua` (`FIRST_POWERUP`).
 - [2026-10-01 22:06 @c8443f9] `main.lua`: la línea `package.path = "lua/?.lua;" .. package.path` parece no hacer nada.
   Con un submódulo de prueba, `require("spelunky2rl.probe")` resolvió *antes* de esa línea (lo resuelve
-  el `require` de Overlunky, relativo a la carpeta del script), `lua/` no existe respecto al directorio
+  el `require` del motor de scripts, relativo a la carpeta del script), `lua/` no existe respecto al directorio
   de trabajo del juego (`io.open("lua/spelunky2rl/probe.lua")` da `nil`) y luasocket carga su DLL con
   `package.loadlib` y la ruta de `script_path.lua`. Quitarla y pasar
   `tests/integration`. Solo probado bajo Wine en Docker; no la quité en la reorganización porque no
   puedo probarlo en Windows nativo.
-- [2026-10-04 02:08 @7bb7227] Publicar la 0.1.1 (todo lo de dentro del repo está hecho; quedan pasos fuera, a mano):
-  1) en pypi.org, "Add a new pending publisher": proyecto `spelunky2rl`, owner `vicbentu`, repo
-  `spelunky2rl`, workflow `pypi.yml`, entorno `pypi`; 2) mergear `dev` a `main`; 3) `git tag v0.1.1`
-  sobre `main` y push del tag: lanza `pypi.yml` y `docker.yml`; 4) en GitHub, marcar como público el
-  paquete `spelunky2rl-game` de GHCR (ver `Q/game-image-unpublished`). Después, comprobar que
-  `pip install spelunky2rl` + `spelunky2rl pull` funcionan en un venv limpio y que el enlace a `LICENSE`
-  del README (hoy 404: la licencia no está en `main`) responde.
 
 ## Ideas
 
@@ -94,30 +65,16 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
 - [2026-10-01 00:53 @4cdc78a] Revisar el mecanismo de velocidad (`speedup` + `state_updates`), hecho a
   mano en su día. Hoy: `set_speedhack(100)` y, en cada `POST_UPDATE` del motor, `update_state()`
   `state_updates` veces (final de `on_post_update` en `spelunky2rl/session.lua`; solo con `speedup=True`). La idea es amortizar
-  el coste fijo de cada frame del motor (`Present` de DXVK, UI de Overlunky, bucle de Wine), que
+  el coste fijo de cada frame del motor (`Present` de DXVK, bucle de Wine), que
   `render=False` no quita: solo evita dibujar nivel y HUD (+18 % a `state_updates=0`). Sin medir:
   pasos/s con `render=False` y `state_updates` = 0/10/50/200, ni si hay una vía mejor (p. ej. un
   bucle propio de `update_state()` mientras Python manda pasos, sin volver al motor, o quitar el
   speedhack si `state_updates` ya lo cubre). Si `state_updates` alto es siempre mejor, quizá no debería
   ser un parámetro del usuario.
-- [2026-10-01 00:55 @7ce4428] Estandarizar el contrato de datos Python ↔ Lua (opciones y observación).
-  Es un cambio de protocolo (subir `PROTOCOL_VERSION`). Hoy: las opciones de `reset` son una lista fija
-  en `_game_reset` (`engine/core.py`; un nombre desconocido es `TypeError`); `data_to_send` es una lista
-  de strings sin validar (`map_info`, `entity_info`, `dist_to_goal`, y `custom_info`, que siempre manda
-  `""`); `step` lo lee con `getattr(self, "data_to_send", [])` y `reset` con `self.data_to_send`;
-  `basic_info` va entero en cada paso aunque el entorno no lo use; formatos fijos (`map_info` 11x21,
-  `entity_info` de 7 campos) sin parámetros ni descripción formal. Ideas: esquema único de opciones y
-  campos (con valores por defecto y validación en Python), pedir solo los campos que usa la
-  observación, tamaños configurables, documentar el formato. Medir antes: coste por campo en Lua
-  (`map_info` +150 µs/paso, `entity_info` +110 µs, `dist_to_goal` ~0) y en `json.encode`.
-  Relacionado: el protocolo binario, más abajo.
-- [2026-09-30 00:20 @222ac52] Protocolo binario (`string.pack` / `numpy.frombuffer`): techo estimado
-  15-25 % en entornos con `map_info`; hoy no compensa: ~92 % del paso es esperar al juego (medido en
-  7dc9904). Mirar de nuevo si el mecanismo de velocidad (arriba) cambia ese reparto.
 - [2026-09-28 14:02 @996066a] Render por memoria compartida con número de secuencia, solo si se quieren
   píxeles como observación (hoy `render()` lee el Xvfb con mss).
 - [2026-09-28 14:02 @996066a] Captura dentro del juego enganchando `IDXGISwapChain::Present`, mismo caso
-  que el anterior; también quitaría la barra de Overlunky de los frames (ver Bugs).
+  que el anterior.
 - [2026-10-01 20:52 @2880e06] `reset` en `main.lua`: espera fija de 60 frames tras el `warp` antes de
   aplicar `destroy_entities`/`set_start_values` y mandar el estado. Si a los 60 frames no hay jugador,
   `set_start_values` indexa `players[1]` (`nil`) y falla. Mirar si se puede esperar a que el nivel esté
@@ -131,7 +88,7 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   alcanzarse al pie de un pozo que no se puede subir. Si el camino real es un rodeo de más de 200 pasos,
   el entorno lo corta y el agente no puede aprenderlo. La recompensa por acercarse (`*0.1` sobre la
   diferencia de distancias) no es el problema: es una diferencia de potencial y no cambia la política
-  óptima. Mirar solo si el reentrenamiento (ver Next) se atasca: contar cuántos episodios acaban por
+  óptima. Mirar solo si un entrenamiento (en `spelunky2rl-experiments`) se atasca: contar cuántos episodios acaban por
   este corte y dónde está el jugador.
 - [2026-10-03 22:25 @e9148d6] Limpieza de lo que no es la librería. El paquete son los entornos Gymnasium; entrenar, evaluar y
   grabar vídeo son demos que en algún momento se quitarán o se irán a otro sitio, y sus dependencias
@@ -142,6 +99,22 @@ no se sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo
   --logdir`), `docs/getting-started.md` l. 36 (`[train]`) y `docs/architecture.md` l. 608. Los tests
   (`tests/unit`, `tests/integration`) no importan nada de eso. Decidir: qué demos quedan (¿solo
   `manual_control` y un benchmark sin SB3, con el `VectorEnv` de Gymnasium?), adónde van las de
-  entrenamiento (otro repo, `examples/` fuera del paquete sin extras, o borrarlas tras el
-  reentrenamiento de Next, que hoy las usa), y si sobran extras. Repasar también tests y scripts
-  (`scripts/`, `feasibility/`) que ya no sirvan.
+  entrenamiento (otro repo, `examples/` fuera del paquete sin extras, o borrarlas), y si sobran extras. Repasar también tests y scripts
+  (`scripts/`) que ya no sirvan.
+- [2026-10-06 12:09 @dbca4b8] Con vistas grandes el paso lo domina recoger `map_info` en Lua, no la comunicación (ya en
+  binario). Medido con `GetToExit` y `map_info` + `entity_info` + `dist_to_goal` (speedup,
+  `state_updates=50`): 21x11 0,52 ms/paso, 81x41 0,95, 161x121 2,46; de esos ~1,9 ms extra, empaquetar
+  y leer son ~0,35 y recorrer las casillas en `map_info` (`observations.lua`) ~0,9. Idea: el mapa de
+  tiles solo cambia cuando `pathfinding` lo marca sucio; mandar el nivel entero solo entonces (o los
+  cambios) y que Python recorte la vista con numpy, así el tamaño de la vista no cuesta nada por paso.
+  Cambia el protocolo (un campo que no llega en cada estado). Solo vale la pena si alguien usa vistas
+  grandes. Script: `~/Desktop/tmp/spelunky/steps_wide.py`.
+- [2026-10-06 15:58 @792f303] Spel2.exe muere al arrancar en ~1 % de los arranques (3 de 320 con 8 en paralelo; 3 de
+  ~320 también en la suite, en serie), antes de que el mod conecte: page fault `execute access to
+  0000000000000000` o `read access` en `6FFFF36F....` (una DLL de Wine), justo tras crear el swapchain
+  de DXVK (`Image count: 3`), o sin mensaje. Desde que la imagen no muestra el diálogo de crash de
+  winedbg el contenedor sale y `_launch_and_accept` relanza en segundos: cuesta ~10 s y solo falla si
+  pasa `max_launch_attempts` (3) veces seguidas. Causa sin investigar (¿la inyección de
+  Playlunky compitiendo con el arranque? medido cuando también se inyectaba Overlunky); el backtrace de winedbg no llega a la salida del
+  contenedor, probar con `WINEDEBUG=+seh`. Scripts en `~/Desktop/tmp/spelunky/connreset/` (`stress.py`
+  N_WORKERS N_ARRANQUES, `capture_plugin.py` guarda la salida de cada contenedor, `crashes.sh`).

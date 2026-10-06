@@ -17,17 +17,18 @@ local frames_left = 0               -- frames to run before `command` is answere
 local speedup = false
 local state_updates = 0
 local fast_forwarding = false       -- inside our own update_state() calls
+local layout = nil                  -- of the states of this episode, sent with the reset answer
 
 -- The frames of `command` have run: send the state it is waiting for.
 local function answer()
     if command.command == "step" then
-        protocol.send(observations.collect(command.data_to_send))
+        protocol.send_state({}, observations.collect())
 
     elseif command.command == "reset" then
         -- only now, with the level loaded, are there a player and entities to change
         control.destroy_entities(command.ent_types_to_destroy)
         control.set_start_values(command)
-        protocol.send(observations.collect(command.data_to_send))
+        protocol.send_state({layout = layout}, observations.collect())
     end
 end
 
@@ -36,6 +37,7 @@ local function start()
     if command.command == "reset" then
         input.release()
         pathfinding.reset()
+        layout = observations.configure(command.fields)
         control.start_level(command.seed, command.world, command.level, command.theme)
         frames_left = RESET_FRAMES
 

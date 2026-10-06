@@ -61,6 +61,23 @@ def test_unknown_reset_option_is_rejected(make_env):
     assert not env.fake_lua.messages
 
 
+def test_fields_are_sent_on_reset_only(make_env):
+    class WideView(GetToExit):
+        data_to_send = {"map_info": {"width": 41, "height": 21}, "dist_to_goal": {}}
+
+        def gamestate_to_observation(self, gamestate):
+            return {}
+
+    env = make_env(WideView)
+    env.reset(seed=0)
+    assert env.fake_lua.messages[-1]["fields"] == [{"name": "map_info", "width": 41, "height": 21},
+                                                   {"name": "dist_to_goal"}]
+    assert env.last_gamestate["map_info"].shape == (21, 41)
+    env.step([1, 1, 0])
+    assert "fields" not in env.fake_lua.messages[-1] and "data_to_send" not in env.fake_lua.messages[-1]
+    assert env.last_gamestate["map_info"].shape == (21, 41)
+
+
 @pytest.mark.parametrize("action", [[2, 1, 1], (2, 1, 1), np.array([2, 1, 1])])
 def test_action_types(make_env, action):
     env = make_env(GetToExit)

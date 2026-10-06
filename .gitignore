@@ -13,3 +13,4 @@ testing/
 
 CLAUDE.md
 .claude/
+.venv/

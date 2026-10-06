@@ -1,11 +1,13 @@
--- The connection to Python: one JSON object per line over TCP (engine/protocol.py on the other side).
+-- The connection to Python over TCP (engine/protocol.py on the other side): Python sends one JSON
+-- object per line; the mod answers with a JSON header line, followed by the packed game state when
+-- the header says how many bytes it has (`state`).
 local socket = require("luasocket.socket")
 
 local M = {}
 
 -- Keep in sync with PROTOCOL_VERSION in engine/protocol.py and __version__ in version.py
-local PROTOCOL_VERSION = 1
-local MOD_VERSION = "0.1.1"
+local PROTOCOL_VERSION = 2
+local MOD_VERSION = "0.1.2"
 
 local client = nil
 
@@ -24,6 +26,12 @@ end
 
 function M.send(message)
     client:send(json.encode(message) .. "\n")
+end
+
+-- A game state: `header` (a table) gets its size as `state`, and the bytes go right after it.
+function M.send_state(header, state)
+    header.state = #state
+    client:send(json.encode(header) .. "\n" .. state)
 end
 
 -- The next message from Python. Blocks the game until it arrives.
