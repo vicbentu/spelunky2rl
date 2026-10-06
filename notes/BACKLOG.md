@@ -69,17 +69,6 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   `package.loadlib` y la ruta de `script_path.lua`. Quitarla y pasar
   `tests/integration`. Solo probado bajo Wine en Docker; no la quité en la reorganización porque no
   puedo probarlo en Windows nativo.
-- [2026-10-06 11:27 @d5c2337] Mandar `map_info` y `entity_info` en binario: línea JSON de cabecera (`basic_info`,
-  `dist_to_goal`, `map_shape`, `n_entities`) y detrás un bloque binario; el mapa, fila a fila, con
-  `string.pack("<" .. string.rep("i2", ancho), table.unpack(fila))` (formato cacheado por ancho) y cada
-  entidad con `string.pack("<fffffff", ...)`; en Python `numpy.frombuffer`. Es cambio de protocolo (subir
-  `PROTOCOL_VERSION`; el marco pasa de "una línea" a "línea + N bytes"). Medido en el juego (seeds
-  1-3, Lua + Python): vista actual 21x11, 0,08-0,15 ms en JSON (`fastjson.lua`) frente a 0,01-0,06;
-  81x41, ~0,7 frente a ~0,12; 161x121, ~3,0 frente a ~0,35. Ojo: empaquetar aplanando primero la lista,
-  o con un `string.pack` por número, es tan lento como el JSON. Encaja con la idea de estandarizar el
-  contrato Python ↔ Lua (Ideas). Descartado sustituir el socket (DLL nativa con memoria compartida, que
-  `package.loadlib` permitiría como hace luasocket): un ida y vuelta vacío por el socket cuesta ~37 µs.
-  Banco de pruebas en `~/Desktop/tmp/spelunky` (`bench4.py`, `mod2/`).
 
 ## Ideas
 
@@ -96,17 +85,6 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   bucle propio de `update_state()` mientras Python manda pasos, sin volver al motor, o quitar el
   speedhack si `state_updates` ya lo cubre). Si `state_updates` alto es siempre mejor, quizá no debería
   ser un parámetro del usuario.
-- [2026-10-01 00:55 @7ce4428] Estandarizar el contrato de datos Python ↔ Lua (opciones y observación).
-  Es un cambio de protocolo (subir `PROTOCOL_VERSION`). Hoy: las opciones de `reset` son una lista fija
-  en `_game_reset` (`engine/core.py`; un nombre desconocido es `TypeError`); `data_to_send` es una lista
-  de strings sin validar (`map_info`, `entity_info`, `dist_to_goal`, y `custom_info`, que siempre manda
-  `""`); `step` lo lee con `getattr(self, "data_to_send", [])` y `reset` con `self.data_to_send`;
-  `basic_info` va entero en cada paso aunque el entorno no lo use; formatos fijos (`map_info` 11x21,
-  `entity_info` de 7 campos) sin parámetros ni descripción formal. Ideas: esquema único de opciones y
-  campos (con valores por defecto y validación en Python), pedir solo los campos que usa la
-  observación, tamaños configurables, documentar el formato. Medir antes: coste por campo en Lua
-  (`map_info` +150 µs/paso, `entity_info` +110 µs, `dist_to_goal` ~0) y en `json.encode`.
-  Relacionado: `map_info`/`entity_info` en binario (Improvements).
 - [2026-09-28 14:02 @996066a] Render por memoria compartida con número de secuencia, solo si se quieren
   píxeles como observación (hoy `render()` lee el Xvfb con mss).
 - [2026-09-28 14:02 @996066a] Captura dentro del juego enganchando `IDXGISwapChain::Present`, mismo caso
@@ -137,3 +115,11 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   `manual_control` y un benchmark sin SB3, con el `VectorEnv` de Gymnasium?), adónde van las de
   entrenamiento (otro repo, `examples/` fuera del paquete sin extras, o borrarlas), y si sobran extras. Repasar también tests y scripts
   (`scripts/`, `feasibility/`) que ya no sirvan.
+- [2026-10-06 12:09 @dbca4b8] Con vistas grandes el paso lo domina recoger `map_info` en Lua, no la comunicación (ya en
+  binario). Medido con `GetToExit` y `map_info` + `entity_info` + `dist_to_goal` (speedup,
+  `state_updates=50`): 21x11 0,52 ms/paso, 81x41 0,95, 161x121 2,46; de esos ~1,9 ms extra, empaquetar
+  y leer son ~0,35 y recorrer las casillas en `map_info` (`observations.lua`) ~0,9. Idea: el mapa de
+  tiles solo cambia cuando `pathfinding` lo marca sucio; mandar el nivel entero solo entonces (o los
+  cambios) y que Python recorte la vista con numpy, así el tamaño de la vista no cuesta nada por paso.
+  Cambia el protocolo (un campo que no llega en cada estado). Solo vale la pena si alguien usa vistas
+  grandes. Script: `~/Desktop/tmp/spelunky/steps_wide.py`.

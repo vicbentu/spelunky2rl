@@ -142,7 +142,7 @@ shows everything the mod attaches to:
 | `session.lua` | the last command from Python, the frame countdown, the simulated frames | `ON.POST_UPDATE` |
 | `control.lua` | starting a level (warp, themes), start values, destroying entities, game options, the pause flag, skipping the render | `ON.RENDER_PRE_GAME`, `ON.RENDER_PRE_HUD` |
 | `input.lua` | the input held for the agent, `manual_control` | `ON.PRE_UPDATE` |
-| `observations.lua` | the player's last values, the `win` flag; builds the game state | `ON.TRANSITION` |
+| `observations.lua` | the player's last values, the `win` flag, the fields of the episode; builds the game state and packs it as its layout says | `ON.TRANSITION` |
 | `pathfinding.lua` | the floor tile table and the distance field to the nearest exit | spawn and destruction of floor tiles |
 | `fastjson.lua` | the JSON encoder for messages to Python (Overlunky's `json.encode` is ~4x slower on big observations) | |
 | `util.lua` | `round`, `safe` | |
@@ -174,8 +174,10 @@ is registered only in `main.lua`. `luasocket/` is the vendored socket library.
   `step` received then does not change the held input.
 - The input is written to the game before every logic frame (`ON.PRE_UPDATE`) until the next `step`
   replaces it. `reset` and `close` release it. With `manual_control` the agent's actions are ignored.
-- `map_info` is 11 rows (top to bottom) of 21 tile types around the player, 0 where there is no floor
-  tile. `entity_info` is a list of `[dx, dy, vel_x, vel_y, type, face_left, held type]`.
+- `map_info` is `height` rows (top to bottom) of `width` tile types around the player (21x11 by
+  default), 0 where there is no floor tile. `entity_info` has one row
+  `[dx, dy, vel_x, vel_y, type, face_left, held type]` per entity whose hitbox touches a view of the
+  same kind.
 - `dist_to_goal` counts cells from the player's cell to the nearest exit (a level can have several)
   through the ones that are not solid, in 4 directions, as if the player could fly: 0 in the exit's
   cell. Tiles, exits and the player are centred on integer coordinates, so a cell is the rounded
@@ -200,8 +202,10 @@ def reset(self, seed=None, options=None, **kwargs):
     # 2. Send reset command to Lua; an option _game_reset does not know is a TypeError
     self._game_reset(seed=seed, **(self.reset_options | (options or {}) | kwargs))
 
-    # 3. Receive initial gamestate
-    gamestate = self._receive_dict()
+    # 3. Receive the layout of this episode's states and the first state
+    header, data = self.server.receive()
+    self.layout = StateLayout(header["layout"])
+    gamestate = self.layout.decode(data)
 
     # 4. Convert to observation
     observation = self.gamestate_to_observation(gamestate)
@@ -222,7 +226,7 @@ def _game_reset(self, seed, speedup, state_updates, hp, bombs, ...):
         "state_updates": state_updates,
         "seed": seed,
         "ent_types_to_destroy": ent_types_to_destroy,
-        "data_to_send": self.data_to_send,
+        "fields": self.fields,  # data_to_send, resolved by engine/fields.py
         "manual_control": manual_control,
         "god_mode": god_mode,
         "hp": hp,
@@ -244,11 +248,11 @@ def step(self, action):
         "command": "step",
         "input": action,
         "frames": self.frames_per_step,
-        "data_to_send": getattr(self, "data_to_send", [])
     })
 
-    # 3. Receive updated gamestate
-    gamestate = self._receive_dict()
+    # 3. Receive updated gamestate (same layout as the reset's)
+    _, data = self.server.receive()
+    gamestate = self.layout.decode(data)
 
     # 4. Calculate reward (delegated to subclass)
     reward, done, truncated, info = self.reward_function(
@@ -272,49 +276,85 @@ def step(self, action):
 
 ### Message Format
 
-All messages are JSON objects sent over TCP, terminated with `\n`:
+One TCP connection on 127.0.0.1. Python sends one JSON object per line. The mod answers every line
+with a JSON **header** line; when the header has `"state": n`, the game state follows it as `n`
+bytes, packed in binary.
 
 **Python → Lua**:
 ```json
 {
     "command": "step",
     "input": [1, 1, 0, 0, 0, 0, 1, 0],
-    "frames": 6,
-    "data_to_send": ["map_info", "dist_to_goal"]
+    "frames": 6
 }
 ```
 
-**Lua → Python**:
-```json
+**Lua → Python**: `{"state": 1352}` and 1352 bytes, which `StateLayout` reads into the gamestate dict:
+
+```python
 {
-    "basic_info": {
-        "time": 360,
-        "health": 4,
-        "bombs": 4,
-        "ropes": 4,
-        "money": 1500,
-        "x_rest": 0.23,
-        "y_rest": -0.45,
-        "char_state": 12,
-        "can_jump": true,
-        "win": 0,
-        "dead_enemies": 3
-    },
-    "map_info": [[...], [...], ...],
-    "dist_to_goal": 42.5
+    "basic_info": {"x": 20.3, "y": 100.05, "health": 4, "can_jump": True, "time": 360, "win": 0, ...},
+    "map_info": np.array(..., dtype=np.int32),       # shape (11, 21)
+    "entity_info": np.array(..., dtype=np.float64),  # shape (entities, 7)
+    "dist_to_goal": 42,
 }
 ```
+
+### Game states in binary
+
+The answer to `reset` adds the **layout** of the states of that episode: one entry per field, in the
+order of the bytes. Every value is little-endian, with no padding.
+
+```json
+{
+    "state": 1352,
+    "layout": [
+        {"name": "basic_info", "record": [["x", "<f8"], ["y", "<f8"], ["health", "<i4"],
+                                          ["face_left", "?"], ["powerups", "u1", 18], ...]},
+        {"name": "map_info", "dtype": "<i4", "shape": [11, 21]},
+        {"name": "entity_info", "dtype": "<f8", "shape": [-1, 7]},
+        {"name": "dist_to_goal", "dtype": "<i4", "shape": []}
+    ]
+}
+```
+
+- `record`: a dict of Python values (`float`, `int`, `bool`; a list where there is a count).
+  `basic_info` always comes first.
+- `shape: []`: one Python value.
+- Any other shape: a numpy array. A `-1` is the number of rows, sent as a `uint32` before them.
+
+The dtypes are numpy's, so Python reads each field with `numpy.frombuffer`; the mod packs them with
+`string.pack` (`observations.lua`, where the layout is defined). Floats are float64, the same values
+the mod has. A state whose length does not match its layout is a `ProtocolError`.
+
+Why binary: written as JSON, every number is formatted in Lua and parsed back in Python, which
+dominated the exchange for big views (161x121 map and entities: ~3 ms per step in JSON, ~0.35 ms
+in binary).
+
+### Fields and parameters
+
+`data_to_send` names the fields beyond `basic_info`, as a list or with parameters:
+
+```python
+data_to_send = ["map_info", "dist_to_goal"]
+data_to_send = {"map_info": {"width": 41, "height": 21}, "entity_info": {}}
+```
+
+`engine/fields.py` holds every field with its parameters and defaults, and checks them when the env
+is created (a wrong name or value is a `ValueError` before the game starts). `map_info` and
+`entity_info` take `width` and `height`: odd sizes, centred on the player, 21x11 by default.
+The fields go to the mod in the reset message and hold for the whole episode.
 
 ### Connection and handshake
 
-`engine/protocol.py` holds the framing: one JSON object per line, buffered reads, a per-step timeout
-(`step_timeout`, raises `TimeoutError`), `ConnectionError` on EOF and `RuntimeError` for
-`{"error": ...}` messages from Lua.
+`engine/protocol.py` holds the framing: buffered reads, a per-step timeout (`step_timeout`, raises
+`TimeoutError`), `ConnectionError` on EOF and `RuntimeError` for `{"error": ...}` headers from Lua,
+which can come instead of any answer.
 
 Right after connecting, the mod sends:
 
 ```json
-{"hello": {"protocol": 1, "mod": "0.1.0"}}
+{"hello": {"protocol": 2, "mod": "0.1.2"}}
 ```
 
 Python compares `protocol` with `PROTOCOL_VERSION` and fails with a message naming the image to
@@ -332,7 +372,7 @@ changes shape; the image tag always equals the package version.
     "speedup": true,
     "state_updates": 200,
     "ent_types_to_destroy": [219, 220, 221],
-    "data_to_send": ["map_info", "dist_to_goal"],
+    "fields": [{"name": "map_info", "width": 21, "height": 11}, {"name": "dist_to_goal"}],
     "manual_control": false,
     "god_mode": false,
     "hp": 4,
@@ -346,7 +386,7 @@ changes shape; the image tag always equals the package version.
 
 An optional `"theme"` (overlunky `THEME` id) overrides the default theme for `world`/`level`.
 
-The Lua script responds with the initial gamestate.
+The Lua script responds with the layout and the initial gamestate.
 
 **2. Step Command**
 
@@ -354,15 +394,14 @@ The Lua script responds with the initial gamestate.
 {
     "command": "step",
     "input": [1, 1, 0, 1, 0, 0, 1, 0],
-    "frames": 6,
-    "data_to_send": ["map_info"]
+    "frames": 6
 }
 ```
 
 The Lua script:
 1. Applies the input for the specified number of frames
-2. Extracts requested data
-3. Responds with updated gamestate
+2. Collects the fields of the last reset
+3. Responds with the packed gamestate
 
 **3. Close Command**
 
@@ -408,10 +447,10 @@ Lua Gamestate → Python gamestate dict → gamestate_to_observation() → Gymna
 **Example**:
 
 ```python
-# Lua sends:
+# Python reads from the mod:
 {
-    "basic_info": {"char_state": 12, "can_jump": true, ...},
-    "map_info": [[0, 0, 1, ...], ...]
+    "basic_info": {"char_state": 12, "can_jump": True, ...},
+    "map_info": np.array([[0, 0, 1, ...], ...], dtype=np.int32)
 }
 
 # gamestate_to_observation() converts to:
@@ -502,7 +541,8 @@ Allows the game to run as fast as the CPU permits.
 
 ### Data Optimization
 
-Only request data you need in `data_to_send`:
+Only request data you need in `data_to_send`, with the smallest view that works (the cost of
+`map_info` and `entity_info` grows with `width` x `height`):
 
 ```python
 # Minimal (fastest)
