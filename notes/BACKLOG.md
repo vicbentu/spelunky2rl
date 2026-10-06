@@ -114,7 +114,7 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   (`tests/unit`, `tests/integration`) no importan nada de eso. Decidir: qué demos quedan (¿solo
   `manual_control` y un benchmark sin SB3, con el `VectorEnv` de Gymnasium?), adónde van las de
   entrenamiento (otro repo, `examples/` fuera del paquete sin extras, o borrarlas), y si sobran extras. Repasar también tests y scripts
-  (`scripts/`, `feasibility/`) que ya no sirvan.
+  (`scripts/`) que ya no sirvan.
 - [2026-10-06 12:09 @dbca4b8] Con vistas grandes el paso lo domina recoger `map_info` en Lua, no la comunicación (ya en
   binario). Medido con `GetToExit` y `map_info` + `entity_info` + `dist_to_goal` (speedup,
   `state_updates=50`): 21x11 0,52 ms/paso, 81x41 0,95, 161x121 2,46; de esos ~1,9 ms extra, empaquetar
