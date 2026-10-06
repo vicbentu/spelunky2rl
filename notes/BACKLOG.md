@@ -22,12 +22,6 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   `map_info` sale todo a 0; `dist_to_goal` se busca en el tablero de la capa frontal. Leído en el
   código, sin reproducir (entrar por una puerta a la capa trasera y mirar `map_info`). Mismo origen que
   el de `count_dead_enemies`. Hoy `refresh` en `spelunky2rl/pathfinding.lua`.
-- [2026-10-03 14:05 @766e650] Suite de integración: un `ConnectionResetError: [Errno 104]` en 1 de 6
-  ejecuciones completas (`pytest tests/integration` con `SPELUNKY2RL_DEV_MOD`, árbol con los arreglos
-  de `dist_to_goal` sin commitear); esa ejecución tardó 256 s en vez de ~89 s y las cinco siguientes
-  pasaron 7/7. No guardé qué test fue ni la salida del juego. `ConnectionResetError` es el proceso del
-  juego muerto, no un error de Lua (eso sería `RuntimeError`). Para cazarlo: repetir la suite en bucle
-  guardando la salida completa y `launcher.diagnostics()` del entorno que falle.
 - [2026-10-04 20:39 @188a940] `manual_control=True` no sirve con los launchers actuales: el mod solo deja de escribir la
   entrada del agente (`input.lua`) para que el juego lea el teclado, pero `docker` y `wine` corren el
   juego en un Xvfb que nadie ve y al que no llega ninguna tecla; el jugador se queda quieto.
@@ -123,3 +117,12 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   cambios) y que Python recorte la vista con numpy, así el tamaño de la vista no cuesta nada por paso.
   Cambia el protocolo (un campo que no llega en cada estado). Solo vale la pena si alguien usa vistas
   grandes. Script: `~/Desktop/tmp/spelunky/steps_wide.py`.
+- [2026-10-06 15:58 @792f303] Spel2.exe muere al arrancar en ~1 % de los arranques (3 de 320 con 8 en paralelo; 3 de
+  ~320 también en la suite, en serie), antes de que el mod conecte: page fault `execute access to
+  0000000000000000` o `read access` en `6FFFF36F....` (una DLL de Wine), justo tras crear el swapchain
+  de DXVK (`Image count: 3`), o sin mensaje. Desde que la imagen no muestra el diálogo de crash de
+  winedbg el contenedor sale y `_launch_and_accept` relanza en segundos: cuesta ~10 s y solo falla si
+  pasa `max_launch_attempts` (3) veces seguidas. Causa sin investigar (¿la inyección de
+  Overlunky/Playlunky compitiendo con el arranque?); el backtrace de winedbg no llega a la salida del
+  contenedor, probar con `WINEDEBUG=+seh`. Scripts en `~/Desktop/tmp/spelunky/connreset/` (`stress.py`
+  N_WORKERS N_ARRANQUES, `capture_plugin.py` guarda la salida de cada contenedor, `crashes.sh`).

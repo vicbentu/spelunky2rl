@@ -26,6 +26,8 @@ for d in d3d11 dxgi d3d10core d3d9 d3d8; do
     wine reg add 'HKCU\Software\Wine\DllOverrides' /v "$d" /d native /f >/dev/null
 done
 wine reg add 'HKCU\Software\Wine\Drivers' /v Audio /d '' /f >/dev/null
+# a crash dialog would keep the dead game's process alive until startup_timeout
+wine reg add 'HKCU\Software\Wine\WineDbg' /v ShowCrashDialog /t REG_DWORD /d 0 /f >/dev/null
 "$WINESERVER" -w
 # Per-instance prefixes are copies of this one; drop stale copies so they pick up changes
 rm -rf "$HOME_DIR/prefixes"
