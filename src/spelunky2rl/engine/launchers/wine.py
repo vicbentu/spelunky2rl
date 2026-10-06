@@ -36,7 +36,7 @@ class WineLauncher(Launcher):
             raise ValueError(f"renderer must be 'auto', 'gpu' or 'cpu', got {renderer!r}")
         self.game_dir = check_game_dir(game_dir)
         self.home = Path(wine_home or os.environ.get("SPELUNKY2RL_WINE_HOME") or default_wine_home())
-        for needed in ("playlunky/playlunky_launcher.exe", "Overlunky/Overlunky.dll", "steam_api64.dll", "prefix"):
+        for needed in ("playlunky/playlunky_launcher.exe", "playlunky/PATCHED", "steam_api64.dll", "prefix"):
             if not (self.home / needed).exists():
                 raise FileNotFoundError(f"{self.home / needed} is missing: run scripts/setup_wine.sh first")
         self.renderer = renderer
@@ -93,7 +93,7 @@ class WineLauncher(Launcher):
             mod.mkdir()
             os.symlink(self.dev_mod, mod / "lua")
         game = assemble_instance(self.game_dir, self._instance_dir / "game", self.home / "steam_api64.dll",
-                                 self.home / "Overlunky", mod=mod, cache=self.cache.path)
+                                 mod=mod, cache=self.cache.path)
 
         self._xvfb = subprocess.Popen(["Xvfb", self.display, "-screen", "0", "640x360x24", "-nolisten", "tcp"],
                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -112,7 +112,7 @@ class WineLauncher(Launcher):
         exe_dir = "Z:" + str(game).replace("/", "\\")
         playlunky = self.home / "playlunky"
         self._launcher = subprocess.Popen([self.wine, str(playlunky / "playlunky_launcher.exe"),
-                                           f"--exe_dir={exe_dir}", "--overlunky"],
+                                           f"--exe_dir={exe_dir}"],
                                           cwd=playlunky, env=env,
                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self._env = env

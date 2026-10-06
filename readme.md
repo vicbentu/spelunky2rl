@@ -24,7 +24,7 @@ Either way you need your own copy of Spelunky 2 (Steam is only needed to downloa
 
 ```bash
 pip install spelunky2rl # add [render] for render()
-spelunky2rl pull      # Linux: the game runtime image (Wine, Playlunky, Overlunky; not the game), or build it
+spelunky2rl pull      # Linux: the game runtime image (Wine, Playlunky; not the game), or build it
 spelunky2rl doctor    # checks Docker, GPU, the image and your game folder
 ```
 

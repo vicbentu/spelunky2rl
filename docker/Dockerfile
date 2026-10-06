@@ -1,5 +1,5 @@
-# The Spelunky 2 runtime for spelunky2rl, minus the game itself: Wine + DXVK, Xvfb, Playlunky,
-# Overlunky, the Goldberg Steam emulator and the Lua mod. The user mounts their game at /game.
+# The Spelunky 2 runtime for spelunky2rl, minus the game itself: Wine + DXVK, Xvfb, Playlunky
+# (patched, see docker/playlunky-patch.md), the Goldberg Steam emulator and the Lua mod. The user mounts their game at /game.
 # Build from the repo root:  docker build -f docker/Dockerfile -t ghcr.io/vicbentu/spelunky2rl-game:<version> .
 
 FROM ubuntu:26.04 AS fetch

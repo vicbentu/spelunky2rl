@@ -7,14 +7,6 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
 
 ## Bugs
 
-- [2026-09-28 13:53 @ce9dcf6] La interfaz de Overlunky (barra de menú + línea de contadores
-  "FRAME/START/TOTAL…", ~40 px arriba) sale en los frames de `render()`. Probado sin éxito:
-  `draw_hud/draw_hotbar/draw_script_messages = 0` y `tabs_open = []` en `overlunky.ini`; un `imgui.ini`
-  propio; F11 (`hide_ui`) con `xdotool windowfocus key F11`; `imgui_playlunky.ini` con la ventana en
-  `Pos=-5000,-5000` y `Collapsed=1` hace que el juego caiga con un page fault. `hide_ui` solo se cambia
-  con la tecla (`src/injected/ui.cpp` de overlunky). Vías sin probar: recortar las filas superiores en
-  `X11FrameSource`, pedir upstream una opción de ini, o capturar dentro del juego (Fase 6 del plan
-  antiguo, ver Ideas).
 - [2026-09-30 00:17 @222ac52] `main.lua`: `count_dead_enemies` solo mira la capa frontal (enemigos
   muertos en la capa trasera no cuentan). Hoy `dead_enemies` en `spelunky2rl/observations.lua`.
 - [2026-10-01 20:52 @2880e06] `main.lua`, `pf_refresh`: `get_entities_by(0, MASK.FLOOR, 0)` solo lee la
@@ -31,7 +23,7 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
 ## Improvements
 
 - [2026-09-28 12:53 @abf1a96] Comprobar la versión de `Spel2.exe` al arrancar y fallar con un mensaje
-  claro si no es la que soportan las versiones fijadas de Playlunky/Overlunky (hoy una actualización del
+  claro si no es la que soporta la versión fijada de Playlunky (hoy una actualización del
   juego rompe los offsets y el síntoma es que el mod no carga: timeout sin explicación). `spelunky2rl
   doctor` ya calcula el hash de build (`15a31692700c3c94` en esta máquina): guardar la lista de hashes
   soportados junto a las versiones fijadas de la imagen, comprobarla antes de lanzar y en `doctor`, y
@@ -58,7 +50,7 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   Hoy `read_player` en `spelunky2rl/observations.lua` (`FIRST_POWERUP`).
 - [2026-10-01 22:06 @c8443f9] `main.lua`: la línea `package.path = "lua/?.lua;" .. package.path` parece no hacer nada.
   Con un submódulo de prueba, `require("spelunky2rl.probe")` resolvió *antes* de esa línea (lo resuelve
-  el `require` de Overlunky, relativo a la carpeta del script), `lua/` no existe respecto al directorio
+  el `require` del motor de scripts, relativo a la carpeta del script), `lua/` no existe respecto al directorio
   de trabajo del juego (`io.open("lua/spelunky2rl/probe.lua")` da `nil`) y luasocket carga su DLL con
   `package.loadlib` y la ruta de `script_path.lua`. Quitarla y pasar
   `tests/integration`. Solo probado bajo Wine en Docker; no la quité en la reorganización porque no
@@ -73,7 +65,7 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
 - [2026-10-01 00:53 @4cdc78a] Revisar el mecanismo de velocidad (`speedup` + `state_updates`), hecho a
   mano en su día. Hoy: `set_speedhack(100)` y, en cada `POST_UPDATE` del motor, `update_state()`
   `state_updates` veces (final de `on_post_update` en `spelunky2rl/session.lua`; solo con `speedup=True`). La idea es amortizar
-  el coste fijo de cada frame del motor (`Present` de DXVK, UI de Overlunky, bucle de Wine), que
+  el coste fijo de cada frame del motor (`Present` de DXVK, bucle de Wine), que
   `render=False` no quita: solo evita dibujar nivel y HUD (+18 % a `state_updates=0`). Sin medir:
   pasos/s con `render=False` y `state_updates` = 0/10/50/200, ni si hay una vía mejor (p. ej. un
   bucle propio de `update_state()` mientras Python manda pasos, sin volver al motor, o quitar el
@@ -82,7 +74,7 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
 - [2026-09-28 14:02 @996066a] Render por memoria compartida con número de secuencia, solo si se quieren
   píxeles como observación (hoy `render()` lee el Xvfb con mss).
 - [2026-09-28 14:02 @996066a] Captura dentro del juego enganchando `IDXGISwapChain::Present`, mismo caso
-  que el anterior; también quitaría la barra de Overlunky de los frames (ver Bugs).
+  que el anterior.
 - [2026-10-01 20:52 @2880e06] `reset` en `main.lua`: espera fija de 60 frames tras el `warp` antes de
   aplicar `destroy_entities`/`set_start_values` y mandar el estado. Si a los 60 frames no hay jugador,
   `set_start_values` indexa `players[1]` (`nil`) y falla. Mirar si se puede esperar a que el nivel esté
@@ -123,6 +115,6 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   de DXVK (`Image count: 3`), o sin mensaje. Desde que la imagen no muestra el diálogo de crash de
   winedbg el contenedor sale y `_launch_and_accept` relanza en segundos: cuesta ~10 s y solo falla si
   pasa `max_launch_attempts` (3) veces seguidas. Causa sin investigar (¿la inyección de
-  Overlunky/Playlunky compitiendo con el arranque?); el backtrace de winedbg no llega a la salida del
+  Playlunky compitiendo con el arranque? medido cuando también se inyectaba Overlunky); el backtrace de winedbg no llega a la salida del
   contenedor, probar con `WINEDEBUG=+seh`. Scripts en `~/Desktop/tmp/spelunky/connreset/` (`stress.py`
   N_WORKERS N_ARRANQUES, `capture_plugin.py` guarda la salida de cada contenedor, `crashes.sh`).

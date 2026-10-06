@@ -25,10 +25,9 @@ def game_dir(tmp_path):
 @posix_only
 def test_symlink_farm(game_dir, tmp_path):
     assets = tmp_path / "assets"
-    (assets / "Overlunky").mkdir(parents=True)
+    assets.mkdir()
     (assets / "steam_api64.dll").write_text("goldberg")
-    out = assemble_instance(game_dir, tmp_path / "inst", assets / "steam_api64.dll", assets / "Overlunky",
-                            cache=tmp_path / "cache")
+    out = assemble_instance(game_dir, tmp_path / "inst", assets / "steam_api64.dll", cache=tmp_path / "cache")
 
     assert os.readlink(out / "Spel2.exe") == str(game_dir / "Spel2.exe")
     assert os.readlink(out / "Data") == str(game_dir / "Data")
@@ -37,9 +36,8 @@ def test_symlink_farm(game_dir, tmp_path):
     assert not (out / "spelunky.log").exists()
     assert (out / "steam_api64.dll").read_text() == "goldberg"
     assert (out / "steam_appid.txt").read_text().strip() == "418530"
-    assert "Mods/Packs/spelunky2rl/lua" in (out / "overlunky.ini").read_text()
-    # our windowed video settings, not the user's (fullscreen leaves every frame black)
-    assert "<window_mode>2</window_mode>" in (out / "local.cfg").read_text()
+    # our borderless window, not the user's video settings (fullscreen leaves every frame black)
+    assert "<window_mode>1</window_mode>" in (out / "local.cfg").read_text()
     packs = out / "Mods" / "Packs"
     assert sorted(p.name for p in packs.iterdir()) == [".db", "load_order.txt", "spelunky2rl"]
     assert (packs / "spelunky2rl" / "lua" / "main.lua").is_file()

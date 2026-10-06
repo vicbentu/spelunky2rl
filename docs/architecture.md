@@ -51,7 +51,7 @@ SpelunkyRL bridges Python-based RL frameworks with Spelunky 2 through a multi-la
    - Handles socket communication
    - Processes observations and rewards
 
-2. **Lua Layer** (the mod in `mod/lua/`, run by Overlunky inside the game)
+2. **Lua Layer** (the mod in `mod/lua/`, run by Playlunky inside the game)
    - Extracts game state via overlunky API
    - Receives and executes actions
    - Sends data back to Python
@@ -122,18 +122,22 @@ variable, and it is also how a launcher finds *its* `Spel2.exe` among several in
 
 Docker and Wine run each instance in a directory assembled over the read-only game folder
 (`engine/assemble.py`, `docker/entrypoint.sh`): symlinks to the game files, real copies of the few
-files the game writes, Goldberg's `steam_api64.dll`, Overlunky, the ini templates, and a
+files the game writes, Goldberg's `steam_api64.dll`, the ini templates, and a
 `Mods/Packs` with only the `spelunky2rl` pack. Playlunky's asset cache (`Mods/Packs/.db`) lives in
 `~/.cache/spelunky2rl/playlunky/<image>/<game build>/` and is shared by all instances.
 
 The pack only holds `lua/`: Playlunky writes inside mod folders and hangs on read-only packs that
 contain images. `meta.unsafe` scripts (needed for luasocket) always start disabled in Playlunky, so
-Overlunky autoruns `main.lua` (`autorun_scripts`, `script_dir`, `enable_unsafe_scripts` in
-`overlunky.ini`).
+`docker/fetch_assets.sh` patches one byte of `playlunky64.dll` to run them
+(`docker/playlunky-patch.md` says why and how to redo it on a Playlunky bump). Overlunky is not
+used: it draws its UI into every frame.
+
+`local.cfg` opens the game as a borderless window filling the Xvfb screen: fullscreen leaves every
+frame black under Wine + Xvfb, and a framed window leaves a black band where the title bar would be.
 
 ### The Lua mod (mod/lua/)
 
-Overlunky runs `main.lua`, which only hooks the modules in `spelunky2rl/` to the game. Reading it
+Playlunky runs `main.lua`, which only hooks the modules in `spelunky2rl/` to the game. Reading it
 shows everything the mod attaches to:
 
 | Module | Owns | Hooked to |
@@ -419,8 +423,8 @@ Signals the Lua script to clean up (though process is also terminated).
 1. **Python listens** on a random port on 127.0.0.1
 2. **The launcher starts the game** with `Spelunky_RL_Port=<port>` in its environment
    (Docker: `docker run`; the entrypoint assembles the instance dir, starts Xvfb and Playlunky)
-3. **Playlunky injects itself and Overlunky**, loads the `spelunky2rl` pack
-4. **Overlunky autoruns `main.lua`**, which reads the port and connects
+3. **Playlunky injects itself** and loads the `spelunky2rl` pack
+4. **Playlunky runs `main.lua`**, which reads the port and connects
 5. **The mod sends its hello**; Python checks the protocol version
 6. From here on, every command from Python gets one gamestate back
 
@@ -651,7 +655,7 @@ From `pyproject.toml`:
 
 - **Spelunky 2**: your own copy of the game
 - Linux: **Docker** (and the NVIDIA Container Toolkit for GPU rendering). The image
-  (`docker/Dockerfile`) contains Wine, DXVK, Xvfb, Playlunky, Overlunky and the Goldberg emulator,
+  (`docker/Dockerfile`) contains Wine, DXVK, Xvfb, Playlunky (patched) and the Goldberg emulator,
   pinned in `docker/versions.env`.
 - Windows: not supported yet
 
