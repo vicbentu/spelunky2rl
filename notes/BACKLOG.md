@@ -69,6 +69,17 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   `package.loadlib` y la ruta de `script_path.lua`. Quitarla y pasar
   `tests/integration`. Solo probado bajo Wine en Docker; no la quité en la reorganización porque no
   puedo probarlo en Windows nativo.
+- [2026-10-06 11:27 @d5c2337] Mandar `map_info` y `entity_info` en binario: línea JSON de cabecera (`basic_info`,
+  `dist_to_goal`, `map_shape`, `n_entities`) y detrás un bloque binario; el mapa, fila a fila, con
+  `string.pack("<" .. string.rep("i2", ancho), table.unpack(fila))` (formato cacheado por ancho) y cada
+  entidad con `string.pack("<fffffff", ...)`; en Python `numpy.frombuffer`. Es cambio de protocolo (subir
+  `PROTOCOL_VERSION`; el marco pasa de "una línea" a "línea + N bytes"). Medido en el juego (seeds
+  1-3, Lua + Python): vista actual 21x11, 0,08-0,15 ms en JSON (`fastjson.lua`) frente a 0,01-0,06;
+  81x41, ~0,7 frente a ~0,12; 161x121, ~3,0 frente a ~0,35. Ojo: empaquetar aplanando primero la lista,
+  o con un `string.pack` por número, es tan lento como el JSON. Encaja con la idea de estandarizar el
+  contrato Python ↔ Lua (Ideas). Descartado sustituir el socket (DLL nativa con memoria compartida, que
+  `package.loadlib` permitiría como hace luasocket): un ida y vuelta vacío por el socket cuesta ~37 µs.
+  Banco de pruebas en `~/Desktop/tmp/spelunky` (`bench4.py`, `mod2/`).
 
 ## Ideas
 
@@ -95,10 +106,7 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   campos (con valores por defecto y validación en Python), pedir solo los campos que usa la
   observación, tamaños configurables, documentar el formato. Medir antes: coste por campo en Lua
   (`map_info` +150 µs/paso, `entity_info` +110 µs, `dist_to_goal` ~0) y en `json.encode`.
-  Relacionado: el protocolo binario, más abajo.
-- [2026-09-30 00:20 @222ac52] Protocolo binario (`string.pack` / `numpy.frombuffer`): techo estimado
-  15-25 % en entornos con `map_info`; hoy no compensa: ~92 % del paso es esperar al juego (medido en
-  7dc9904). Mirar de nuevo si el mecanismo de velocidad (arriba) cambia ese reparto.
+  Relacionado: `map_info`/`entity_info` en binario (Improvements).
 - [2026-09-28 14:02 @996066a] Render por memoria compartida con número de secuencia, solo si se quieren
   píxeles como observación (hoy `render()` lee el Xvfb con mss).
 - [2026-09-28 14:02 @996066a] Captura dentro del juego enganchando `IDXGISwapChain::Present`, mismo caso
