@@ -1,5 +1,6 @@
 -- The connection to Python: one JSON object per line over TCP (engine/protocol.py on the other side).
 local socket = require("luasocket.socket")
+local fastjson = require("spelunky2rl.fastjson")
 
 local M = {}
 
@@ -23,7 +24,7 @@ function M.connect()
 end
 
 function M.send(message)
-    client:send(json.encode(message) .. "\n")
+    client:send(fastjson.encode(message) .. "\n")
 end
 
 -- The next message from Python. Blocks the game until it arrives.
