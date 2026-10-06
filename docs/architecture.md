@@ -144,7 +144,6 @@ shows everything the mod attaches to:
 | `input.lua` | the input held for the agent, `manual_control` | `ON.PRE_UPDATE` |
 | `observations.lua` | the player's last values, the `win` flag, the fields of the episode; builds the game state and packs it as its layout says | `ON.TRANSITION` |
 | `pathfinding.lua` | the floor tile table and the distance field to the nearest exit | spawn and destruction of floor tiles |
-| `fastjson.lua` | the JSON encoder for messages to Python (Overlunky's `json.encode` is ~4x slower on big observations) | |
 | `util.lua` | `round`, `safe` | |
 
 Every module returns a table and keeps its state in locals: the mod defines no globals. A callback

@@ -2,7 +2,6 @@
 -- object per line; the mod answers with a JSON header line, followed by the packed game state when
 -- the header says how many bytes it has (`state`).
 local socket = require("luasocket.socket")
-local fastjson = require("spelunky2rl.fastjson")
 
 local M = {}
 
@@ -26,13 +25,13 @@ function M.connect()
 end
 
 function M.send(message)
-    client:send(fastjson.encode(message) .. "\n")
+    client:send(json.encode(message) .. "\n")
 end
 
 -- A game state: `header` (a table) gets its size as `state`, and the bytes go right after it.
 function M.send_state(header, state)
     header.state = #state
-    client:send(fastjson.encode(header) .. "\n" .. state)
+    client:send(json.encode(header) .. "\n" .. state)
 end
 
 -- The next message from Python. Blocks the game until it arrives.
