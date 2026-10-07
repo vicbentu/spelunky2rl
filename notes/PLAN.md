@@ -99,7 +99,13 @@ Criterio: tabla medida en el commit que cierra el paso y decisión escrita en un
 speedhack se pierde < 3 % sin render, `speedup` solo controla N y el speedhack queda para el render;
 si no, se queda como está. El mod normal no cambia en este paso salvo que la decisión lo pida.
 
-## 2. Mismo resultado con cualquier N  ·  pending
+## 2. Mismo resultado con cualquier N  ·  done [2026-10-07 14:57]
+Resultado: con 500 acciones fijas, `god_mode`, semilla 3, los estados son idénticos campo a campo con
+N=0/N=0, N=0/N=200 y N=200/N=0 (sin resets a mitad; ver BACKLOG, `get_to_exit` arrastra su contador
+entre `reset()`). Que N=200 coincida implica que `input.apply` corre también en los frames de
+`update_state()`. Test: `test_state_updates_do_not_change_the_game` (con `DefaultEnv`, que manda
+también `entity_info`); en el paso 3 hay que pasarle N sin la opción pública.
+
 Precondición para que el motor elija N por su cuenta: la dinámica no puede depender de N. Con
 `god_mode=True`, misma semilla y la misma secuencia de 500 acciones (fija, de un `np.random` con
 semilla), comparar los estados con N=0 y N=200 campo a campo. Comprobar antes N=0 contra N=0: si el

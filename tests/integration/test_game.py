@@ -80,6 +80,42 @@ def test_same_seed_same_level():
         env.close()
 
 
+def test_state_updates_do_not_change_the_game():
+    """A step is the same game time with any state_updates: the extra frames run the agent's input
+    too (ON.PRE_UPDATE) and answer the same frame count, so the engine can pick N on its own."""
+    env = DefaultEnv(speedup=True, god_mode=True)
+    actions = np.random.default_rng(0).integers(0, env.action_space.nvec, size=(500, len(env.action_space.nvec)))
+
+    def trajectory(state_updates):
+        env.reset(seed=3, state_updates=state_updates)
+        states = [env.last_gamestate]
+        for action in actions:
+            env.step(action)
+            states.append(env.last_gamestate)
+        return states
+
+    def first_difference(a, b, path="state"):
+        if isinstance(a, dict):
+            for key in a.keys() | b.keys():
+                if key not in a or key not in b:
+                    return f"{path}.{key} missing on one side"
+                difference = first_difference(a[key], b[key], f"{path}.{key}")
+                if difference:
+                    return difference
+        elif not np.array_equal(np.asarray(a), np.asarray(b)):
+            return f"{path}: {a!r} != {b!r}"
+
+    try:
+        slow, fast = trajectory(0), trajectory(200)
+        xs = [state["basic_info"]["x"] for state in slow]
+        assert max(xs) - min(xs) > 0.5, "player did not move"
+        for step, (a, b) in enumerate(zip(slow, fast)):
+            difference = first_difference(a, b)
+            assert difference is None, f"step {step}: {difference}"
+    finally:
+        env.close()
+
+
 def test_dist_to_goal_follows_the_player_cell():
     """Between two steps dist_to_goal changes by at most the cells the player moved, with the same
     parity: same cell, same distance; next cell, one more or one less. The distance used to be

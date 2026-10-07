@@ -19,6 +19,13 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   juego en un Xvfb que nadie ve y al que no llega ninguna tecla; el jugador se queda quieto.
   `examples/manual_control.py` y `getting-started.md` (l. 198-222) prometen jugar con el teclado.
   Arreglarlo (VNC con `x11vnc` al Xvfb, o en `wine` usar el `DISPLAY` del host) o quitar la opción.
+- [2026-10-07 14:57 @463aef0] `envs/get_to_exit.py`: `min_dist_to_goal` y `no_improve_counter` solo se reinician al
+  acabar el episodio (`done or truncated`), no en `reset()`. Si se llama a `reset()` a mitad de un
+  episodio (p. ej. evaluaciones con un límite de pasos propio, o `AsyncVectorEnv` tras un error), el
+  episodio siguiente arrastra el mínimo y el contador del anterior y se trunca antes de 200 pasos sin
+  mejorar. Visto al repetir 500 pasos con `reset(seed=3)` dos veces en el mismo entorno: la segunda
+  tanda se truncó en el paso 199. Arreglo: reiniciarlos en `reset` (o en `gamestate_to_observation`
+  del primer estado) y un test unitario.
 
 ## Improvements
 
