@@ -64,10 +64,6 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   bucle propio de `update_state()` mientras Python manda pasos, sin volver al motor, o quitar el
   speedhack si `state_updates` ya lo cubre). Si `state_updates` alto es siempre mejor, quizá no debería
   ser un parámetro del usuario.
-- [2026-09-28 14:02 @996066a] Render por memoria compartida con número de secuencia, solo si se quieren
-  píxeles como observación (hoy `render()` lee el Xvfb con mss).
-- [2026-09-28 14:02 @996066a] Captura dentro del juego enganchando `IDXGISwapChain::Present`, mismo caso
-  que el anterior.
 - [2026-10-01 20:52 @2880e06] `reset` en `main.lua`: espera fija de 60 frames tras el `warp` antes de
   aplicar `destroy_entities`/`set_start_values` y mandar el estado. Si a los 60 frames no hay jugador,
   `set_start_values` indexa `players[1]` (`nil`) y falla. Mirar si se puede esperar a que el nivel esté
@@ -111,3 +107,11 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   Playlunky compitiendo con el arranque? medido cuando también se inyectaba Overlunky); el backtrace de winedbg no llega a la salida del
   contenedor, probar con `WINEDEBUG=+seh`. Scripts en `~/Desktop/tmp/spelunky/connreset/` (`stress.py`
   N_WORKERS N_ARRANQUES, `capture_plugin.py` guarda la salida de cada contenedor, `crashes.sh`).
+- [2026-10-07 11:22 @51ba379] Con `render_enabled=True` dibujar solo el último frame de cada paso. Hoy, con
+  `frames_per_step=6`, el juego dibuja los 6 frames del paso y el agente solo ve el último. El mod ya
+  sabe saltarse el dibujado (con `render=False` devuelve `true` en `ON.RENDER_PRE_GAME`, `control.lua`);
+  habría que activarlo y desactivarlo frame a frame en `session.lua` según `frames_left`. Medido
+  (`GetToExit`, speedup, una instancia, ms por paso con render; `render()` captura aparte):
+  160x90 GPU 2,0 / CPU 8,9; 640x360 GPU 2,1 / CPU 12,9; sin render ~1,9 / ~2,0. Con CPU dibujar es
+  casi todo el paso y podría bajar ~6x; con GPU apenas cambiaría. Sin probar: que el frame dibujado
+  salga completo (no a medias o del frame anterior) y si saltarse el dibujado deja algo sin actualizar.
