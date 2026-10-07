@@ -48,6 +48,11 @@ for _ in range(1000):
 env.close()
 ```
 
+By default the game runs as fast as the machine allows (~1,600 steps/s per instance) and draws
+nothing. For images, pass `render_mode="rgb_array"` (`render()` returns the frame of each state, to
+train on pixels) or `render_mode="rgb_array_list"` (every frame, to record videos). Every option and
+what each costs: [Getting Started](https://github.com/vicbentu/spelunky2rl/blob/main/docs/getting-started.md#creating-an-environment).
+
 ## Available Environments
 
 - **`dummy_environment`** - Minimal test environment
@@ -68,7 +73,7 @@ Check `examples/` for complete examples:
 - **`manual_control.py`** - Test environment with keyboard controls
 - **`train_get_to_exit.py`** - Train an agent with RecurrentPPO
 - **`evaluate_model.py`** - Evaluate trained models
-- **`record_video.py`** - Record videos of agent gameplay
+- **`record_video.py`** - Record videos of agent gameplay (every frame, at 60 FPS)
 
 ## 🔮 Future Work
 

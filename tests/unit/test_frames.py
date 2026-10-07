@@ -95,6 +95,16 @@ def test_waits_for_the_file(layer):
     later.join()
 
 
+def test_waits_for_the_header(layer):
+    """The layer makes the file (zeros) before it writes the header: that is not an error."""
+    layer.path.write_bytes(bytes(HEADER_SIZE))
+    source = VulkanFrameSource(layer.path, timeout=2)
+    later = threading.Timer(0.05, layer.present, args=(image(9, 16, 10),))
+    later.start()
+    assert source.get_frame(drawn=1)[0, 0].tolist() == [12, 11, 10]
+    later.join()
+
+
 def test_times_out(layer):
     layer.present(image(9, 16, 10))
     with pytest.raises(TimeoutError, match="drew 2 frames, but the capture has 1"):

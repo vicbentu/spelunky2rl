@@ -107,7 +107,8 @@ def __init__(self, game_dir=None, launcher="auto", renderer="auto", **kwargs):
    If the game dies before connecting it is relaunched, up to `max_launch_attempts`, all within
    `startup_timeout`. Errors include the launcher's recent output.
 3. Reads the mod's hello and checks the protocol version (`engine/protocol.py`).
-4. If `render_enabled`, asks the launcher for a frame source.
+4. With a `render_mode`, asks the launcher for a frame source; `"rgb_array_list"` needs one that
+   counts frames (`counts_frames`, only `VulkanFrameSource`), else it is a `ValueError`.
 
 ### Launchers (engine/launchers/)
 
@@ -415,11 +416,19 @@ changes shape; the image tag always equals the package version.
     "ropes": 4,
     "gold": 0,
     "world": 1,
-    "level": 1
+    "level": 1,
+    "time_ghost": true,
+    "audio": false,
+    "vsync": false,
+    "render": false,
+    "render_all": false
 }
 ```
 
 An optional `"theme"` (overlunky `THEME` id) overrides the default theme for `world`/`level`.
+`render` is true with a `render_mode` (draw the last frame of each command, and answer once it is
+drawn); `render_all` too with `"rgb_array_list"` (draw every frame). Protocol version 3 added
+`drawn` to the answers and `render_all` to this message.
 
 The Lua script responds with the layout and the initial gamestate.
 
@@ -570,7 +579,7 @@ is why high values used to crash.
 **Limits**: past ~200 the game is no longer the bottleneck; the per-step exchange with Python
 (~0.6 ms) is.
 
-With `render_enabled=False` the mod also returns `true` from `ON.RENDER_PRE_GAME` and
+Without a `render_mode` the mod also returns `true` from `ON.RENDER_PRE_GAME` and
 `ON.RENDER_PRE_HUD`, so the real frames are not drawn either, and the screen is 160x90.
 
 ### Data Optimization
@@ -596,21 +605,17 @@ data_to_send = ["map_info", "dist_to_goal", "entity_info"]
 
 ### Render Mode
 
-Frame grabbing has significant overhead:
+`render_mode` is `None`, `"rgb_array"` (the last frame of each step is drawn; `render()` returns
+it) or `"rgb_array_list"` (every frame is drawn; `render()` returns those since its last call).
+`render_enabled=True` is the old name of `"rgb_array"`. What each costs, for users: "Speed and
+images" in `getting-started.md`. `metadata["render_fps"]` is 60 with `"rgb_array_list"` and
+60 / `frames_per_step` with `"rgb_array"` (set per instance), so that a video of what `render()`
+returns plays at the game's speed.
 
-```python
-# Training (fast)
-env = SpelunkyEnv(render_enabled=False)
-
-# Evaluation/recording (slow)
-env = SpelunkyEnv(render_enabled=True)
-frame = env.render()  # Returns numpy array
-```
-
-**Frame sources** (`engine/frames/`), created by the launcher only when `render_enabled=True`:
+**Frame sources** (`engine/frames/`), created by the launcher only with a `render_mode`:
 
 - `VulkanFrameSource` (Docker): reads the frames the image's Vulkan layer copies to the instance's
-  file in `/dev/shm`, the state's own frame (below).
+  file in `/dev/shm`, the state's own frame and, with `"rgb_array_list"`, those before it (below).
 - `X11FrameSource` (Wine): grabs the instance's Xvfb display with `mss`. It cannot tell frames
   apart, so the image may be one or more frames older than the state.
 

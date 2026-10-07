@@ -22,7 +22,8 @@ import spelunky2rl  # registers the ids
 
 env = gym.make("spelunky2rl/GetToExit-v0")
 # also: spelunky2rl/Default-v0, Dummy-v0, GoldGrabber-v0, EnemyKiller-v0
-# render_mode="rgb_array" enables render()
+# render_mode="rgb_array" or "rgb_array_list" enables render(): see
+# getting-started.md, "Speed and images"
 ```
 
 ### Dummy Environment

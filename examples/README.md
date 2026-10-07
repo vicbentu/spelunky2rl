@@ -10,7 +10,7 @@ This directory contains example scripts demonstrating how to use SpelunkyRL for 
 | `benchmark_performance.py` | Measure environment performance (FPS/throughput) |
 | `train_get_to_exit.py` | Train an agent from scratch |
 | `evaluate_model.py` | Evaluate a trained model |
-| `record_video.py` | Record video of trained agent |
+| `record_video.py` | Record video of trained agent, every frame at 60 FPS |
 
 ## Quick Start
 
@@ -107,7 +107,7 @@ python examples/record_video.py
 - Install opencv: `pip install opencv-python`
 
 **What it does:**
-- Records 30 seconds of gameplay
+- Records 30 seconds of gameplay, every game frame (`render_mode="rgb_array_list"`) at 60 FPS
 - Saves as MP4 in `./videos/` directory
 - Shows agent's learned behavior
 

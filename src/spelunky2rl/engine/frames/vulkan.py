@@ -44,6 +44,8 @@ class VulkanFrameSource(FrameSource):
             except FileNotFoundError:
                 return None
         magic, version, frame, slots, _, slot_size = HEADER.unpack_from(self._map)
+        if magic == 0:
+            return None  # the layer has made the file but not written the header yet
         if magic != MAGIC or version != VERSION:
             raise RuntimeError(f"{self.path} is not a capture of version {VERSION} "
                                f"(magic {magic:#x}, version {version}): the game image and this package differ")

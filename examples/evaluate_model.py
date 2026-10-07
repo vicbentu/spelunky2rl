@@ -54,7 +54,7 @@ def make_env(index: int):
             frames_per_step=6,
             manual_control=False,
             god_mode=False,
-            render_enabled=False  # Set to True to enable video recording
+            render_mode=None  # "rgb_array_list" to record video (see record_video.py)
         )
         return Monitor(env)
     return _init

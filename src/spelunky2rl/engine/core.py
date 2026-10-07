@@ -77,21 +77,27 @@ class SpelunkyRLEngine(gym.Env):
             spelunky_dir: Optional[str] = None,
             **kwargs
         ) -> None:
-        """
+        """Starts the game (one instance per environment) and connects to it. Each parameter is
+        detailed in docs/getting-started.md (https://github.com/vicbentu/spelunky2rl/blob/main/docs/getting-started.md).
+
         Args:
             game_dir: Spelunky 2 folder (with Spel2.exe). Defaults to $SPELUNKY2RL_GAME_DIR.
-                `spelunky_dir` is the old name and still works.
-            launcher: "auto" (Docker), "docker", "wine", or a Launcher instance. The default can be
-                changed with $SPELUNKY2RL_LAUNCHER. Windows is not supported yet.
+            frames_per_step: game frames (1/60 s each) per step(); the action is held for all of them.
+            render_enabled: the same as render_mode="rgb_array".
+            render_mode: None, "rgb_array" (render() returns the frame of the last state) or
+                "rgb_array_list" (render() returns every frame since the last call, for video).
+            render_resolution: (width, height) of the frames, 16:9 and at least 64x36.
+            launcher: "auto" (Docker; $SPELUNKY2RL_LAUNCHER changes it), "docker", "wine" or a Launcher.
             renderer: "auto" (GPU if Docker can use one, else CPU), "gpu" or "cpu".
-            render_mode: None (no frames), "rgb_array" (render() returns the frame of the last
-                state) or "rgb_array_list" (render() returns every frame since the last call, the
-                frames_per_step of each step, for recording video). render_enabled=True is the same
-                as render_mode="rgb_array".
-            render_resolution: (width, height) of the frames render() returns, 16:9 and at least
-                64x36. The game draws at this size, so a smaller one also runs faster.
             launcher_options: extra keyword arguments for the launcher, e.g. {"image": ...}.
-            **kwargs: default reset options (see _game_reset). An unknown one is a TypeError.
+            log_file: a file where every state is written, for debugging.
+            log_info: what log_file gets: "all", "map_info", "entity_count".
+            step_timeout: seconds to wait for the game in reset(), step() and render().
+            startup_timeout: seconds for the game to start and connect.
+            max_launch_attempts: launches before giving up if the game dies before connecting.
+            spelunky_dir: the old name of game_dir.
+            **kwargs: default reset options for every episode (see reset()). An unknown one is a
+                TypeError.
         """
 
         super().__init__()
@@ -144,8 +150,22 @@ class SpelunkyRLEngine(gym.Env):
         options: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> Tuple[Dict, Dict[str, Any]]:
-        """`options` (the gymnasium way) and `**kwargs` are both reset options for this episode
-        (see _game_reset); an unknown one is a TypeError."""
+        """Starts a new episode on a new level. `seed` picks the level (random if None).
+
+        Reset options, for this episode: as keyword arguments or in `options` (the gymnasium way).
+        They override the ones given to __init__, which override the environment's defaults
+        (`reset_options`); an unknown one is a TypeError. Defaults in parentheses.
+
+            speedup (True): run as fast as the machine allows; False plays in real time (60 FPS).
+            ent_types_to_destroy (()): ENT_TYPE ids killed when the level starts.
+            manual_control (False): the agent's actions are ignored and the game reads the keyboard.
+            god_mode (False): the player cannot die.
+            hp (4), bombs (4), ropes (4), gold (0): the player's starting values.
+            world (1), level (1): where the episode starts.
+            theme (None): an Overlunky THEME id; None is the usual theme of world and level.
+            time_ghost (True): the ghost that appears after 3 minutes (it slows the game ~8x).
+            audio (False): the game's sound.
+        """
 
         super().reset(seed=seed)
         reset_options = self.reset_options | (options or {}) | kwargs
