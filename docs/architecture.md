@@ -139,9 +139,11 @@ otherwise. The engine sets `launcher.screen` before starting it: `render_resolut
 `render_enabled`, else 160x90: the screen size changes the speed even when the mod skips drawing
 the level. The Docker launcher passes it as `SCREEN=WxH`.
 
-The engine also sets `launcher.capture` (true with render). The Docker launcher then makes a
-directory for the instance in `/dev/shm`, mounts it at `/capture` and turns on the image's Vulkan
-layer (`SPELUNKY2RL_CAPTURE_LAYER=1`, `SPELUNKY2RL_CAPTURE=/capture/frame`); `stop()` deletes it.
+The engine also sets `launcher.capture` (true with render) and `launcher.capture_frames`, how many
+of the last frames the capture keeps (`frames_per_step` with `render_mode="rgb_array_list"`, else 1).
+The Docker launcher then makes a directory for the instance in `/dev/shm`, mounts it at `/capture`
+and turns on the image's Vulkan layer (`SPELUNKY2RL_CAPTURE_LAYER=1`,
+`SPELUNKY2RL_CAPTURE=/capture/frame`, `SPELUNKY2RL_CAPTURE_SLOTS`); `stop()` deletes it.
 See "Which frame `render()` returns" below.
 
 ### The Lua mod (mod/lua/)
@@ -180,7 +182,8 @@ is registered only in `main.lua`. `luasocket/` is the vendored socket library.
    `ON.POST_UPDATE` again and goes through steps 1 and 2: commands are received and answered inside
    that loop.
 
-**With render** only the last frame of each command is drawn, and its answer waits for it:
+**With render** (`render` in the reset message) only the last frame of each command is drawn, and
+its answer waits for it:
 
 - Right after starting a command, `update_state()` runs all its frames but the last (`frames - 1`,
   59 for a `reset`); they fire `ON.PRE_UPDATE` and `ON.POST_UPDATE` as real frames do. The game's own
@@ -190,6 +193,11 @@ is registered only in `main.lua`. `luasocket/` is the vendored socket library.
   move.
 - `ON.RENDER_POST_HUD` counts the frames drawn (`drawn`). At the next `ON.PRE_GAME_LOOP` after a
   frame was drawn, the mod answers with that count, blocks for the next command and starts it.
+
+**With `render_all`** as well (`render_mode="rgb_array_list"`) every frame is drawn: no
+`update_state()` at the start of a command, and `ON.PRE_UPDATE` also returns `true` while the last
+logic frame has not been drawn. With the speedhack the game would otherwise run several logic frames
+per turn of its loop and draw only the last; this way each logic frame is drawn exactly once.
 
 **Details that environments rely on**:
 
@@ -545,10 +553,10 @@ in real time (60 FPS). How the engine does it depends on whether anyone reads th
   The engine sends `STATE_UPDATES` (200, in `engine/core.py`); users cannot set it. The game clock
   stays at 1x: with 200 logic frames per real one, the 60 FPS cap is no longer the limit (measured:
   the same ~1,600 steps/s with and without the speedhack).
-- **Render**: only the last frame of each step is drawn; the mod runs the others itself with
-  `update_state()` when the step starts (see the Lua mod above), so `state_updates` is 0. The mod
-  sets a 100x speedhack on the game's clock (`set_speedhack(100)` in `control.lua`); without it the
-  game would wait for 60 FPS between those drawn frames.
+- **Render**: only the last frame of each step is drawn (every frame with `"rgb_array_list"`); the
+  mod runs the others itself with `update_state()` when the step starts (see the Lua mod above), so
+  `state_updates` is 0. The mod sets a 100x speedhack on the game's clock (`set_speedhack(100)` in
+  `control.lua`); without it the game would wait for 60 FPS between those drawn frames.
 
 A step is the same game time with any `state_updates` (each extra frame runs the agent's input and
 counts towards `frames`), which `test_state_updates_do_not_change_the_game` checks.
@@ -625,11 +633,20 @@ or in Playlunky's API runs after that.
 The frame is taken at `Present` itself instead, by an implicit Vulkan layer between DXVK and the
 driver (`docker/vklayer/capture.c`, built into the image, on only with
 `SPELUNKY2RL_CAPTURE_LAYER=1`). On every `vkQueuePresentKHR` it copies the image to a host buffer,
-waits for the copy, writes it to `SPELUNKY2RL_CAPTURE` after a 4096-byte header (frame count, size,
-Vulkan format, row stride) and only then raises the count. The mod counts the same frames
-(`drawn`, in `RENDER_POST_HUD`) and sends the count with the state; `render()` waits until the
-layer's count reaches it and reads the pixels (`engine/frames/vulkan.py`). A count past it would
-mean the two disagree, and is an error rather than a wrong image.
+waits for the copy, writes it to `SPELUNKY2RL_CAPTURE` and only then raises the count. The mod
+counts the same frames (`drawn`, in `RENDER_POST_HUD`) and sends the count with the state;
+`render()` waits until the layer's count reaches it and reads the pixels (`engine/frames/vulkan.py`).
+A count past it would mean the two disagree, and is an error rather than a wrong image.
+
+The file is a ring of the last `SPELUNKY2RL_CAPTURE_SLOTS` frames: a 4096-byte header (magic,
+version, frame count, number of slots, slot size), then the slots. Frame n goes to slot
+(n − 1) mod slots, a 64-byte header (its frame number, size, Vulkan format, row stride, copy time)
+and the pixels. With `"rgb_array_list"` there are `frames_per_step` slots, and after each step and
+reset the engine reads the frames since the previous state (`get_frames`) while the game waits for
+the next command; a slot whose number is not the frame asked for was overwritten, and is an error.
+`render()` then returns the frames gathered since its last call, as
+`gymnasium.wrappers.RenderCollection` does; `reset()` starts the list again with its own frame (the
+frames of the level loading are not the episode's).
 
 Checked by drawing `state.time_level` as a colour in a corner and comparing it with `time` in the
 state: the same in every step and every reset (GPU and CPU, `frames_per_step` 1 and 6, 160x90 to
@@ -639,6 +656,9 @@ state: the same in every step and every reset (GPU and CPU, `frames_per_step` 1 
 |---|---|---|---|---|
 | every frame drawn, screen grab (older frame) | 2.1 | 2.7 | 8.7 | 13.1 |
 | last frame drawn, layer (state's frame) | 1.5 | 1.7 | 4.1 | 5.9 |
+
+With `"rgb_array_list"` the same check holds for every frame: each step's 6 frames are consecutive
+logic frames and the last is the state's.
 
 ## Error Handling
 

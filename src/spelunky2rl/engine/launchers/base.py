@@ -24,6 +24,9 @@ class Launcher:
     # True when render() will read frames, set by the engine before start(): a launcher that can
     # capture them frame by frame sets that up
     capture = False
+    # How many of the last frames the capture keeps, set by the engine with capture: with
+    # render_mode="rgb_array_list" those of a whole step
+    capture_frames = 1
 
     def starting(self, timeout: float) -> "contextlib.AbstractContextManager[None]":
         """Held from before start() until the mod has connected."""

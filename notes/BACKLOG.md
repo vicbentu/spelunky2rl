@@ -26,6 +26,19 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   mejorar. Visto al repetir 500 pasos con `reset(seed=3)` dos veces en el mismo entorno: la segunda
   tanda se truncó en el paso 199. Arreglo: reiniciarlos en `reset` (o en `gamestate_to_observation`
   del primer estado) y un test unitario.
+- [2026-10-07 23:09 @ab0152c] `tests/integration/test_game.py::test_parallel_envs[4]` (4 `GetToExit` sin render en
+  `AsyncVectorEnv`, 500 pasos) falló 2 veces de 46.
+  - El primer fallo fue en la suite completa: `TimeoutError: No response from the Spelunky Lua
+    script in 60.0 s` en un `step` de uno de los workers.
+  - El segundo fue el test solo, a los 20 s (lo que dura uno que pasa). No se guardó qué assert falló.
+  - Los dos fueron en las primeras ejecuciones tras reconstruir la imagen `0.1.3.dev0` (paso 6 de
+    "Velocidad y render").
+  - Después, 0 fallos de 35: 10 con el mod de `ab0152c` montado con `SPELUNKY2RL_DEV_MOD`, 10 con el
+    nuevo y 15 más.
+  - Sin render, el mod nuevo hace lo mismo que el de `ab0152c`.
+  - Para reproducirlo, repetir el test con `-rA` guardando la salida, y mirar si es un cuelgue del
+    juego (Spel2.exe vivo pero sin responder) o la muerte de Spel2.exe a mitad (ver la idea de los
+    arranques que mueren).
 
 ## Improvements
 

@@ -102,11 +102,13 @@ def test_docker_capture(game_dir, tmp_path, no_gpu, monkeypatch):
     monkeypatch.setattr(docker_launcher, "ensure_image", lambda image, docker: None)
     launcher.docker = "true"  # start() runs `true run ...` instead of a container
     launcher.capture = True
+    launcher.capture_frames = 6
     launcher.start(1)
     capture_dir = launcher.capture_dir
     cmd = launcher.command(1)
     assert f"{capture_dir}:/capture" in cmd
     assert "SPELUNKY2RL_CAPTURE_LAYER=1" in cmd and "SPELUNKY2RL_CAPTURE=/capture/frame" in cmd
+    assert "SPELUNKY2RL_CAPTURE_SLOTS=6" in cmd
     assert launcher.frame_source(timeout=1).path == f"{capture_dir}/frame"
     launcher.stop()
     assert not os.path.exists(capture_dir) and launcher.capture_dir is None

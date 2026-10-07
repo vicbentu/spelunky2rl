@@ -84,7 +84,10 @@ def pack_state(layout, gamestate) -> bytes:
 class FakeLua(threading.Thread):
     """Client end of the engine socket. `respond(message, step_index)` returns the state to send (a
     dict like make_gamestate's), a dict with "error", or None to stay silent. Every received message
-    is kept in `messages`."""
+    is kept in `messages`. It counts frames drawn as the mod does with render: RESET_FRAMES for a
+    reset, then one per step, or the step's frames with render_all."""
+
+    RESET_FRAMES = 3
 
     def __init__(self, sock: socket.socket, respond=None, seed=0, hello=None):
         super().__init__(daemon=True)
@@ -94,6 +97,8 @@ class FakeLua(threading.Thread):
         self.respond = respond or self.default_respond
         self.messages = []
         self.steps = 0
+        self.drawn = 0
+        self.render_all = False
         self.fields = []
         self.start()
 
@@ -118,8 +123,11 @@ class FakeLua(threading.Thread):
                     self.steps = 0
                     self.fields = message["fields"]
                     layout = layout_for(self.fields)
+                    self.render_all = message.get("render_all", False)
+                    self.drawn += self.RESET_FRAMES
                 else:
                     self.steps += 1
+                    self.drawn += message["frames"] if self.render_all else 1
                 reply = self.respond(message, self.steps)
                 if reply is None:
                     continue
@@ -127,7 +135,7 @@ class FakeLua(threading.Thread):
                     self.send_line(reply)
                     continue
                 state = pack_state(layout, reply)
-                header = {"state": len(state), "drawn": self.steps}
+                header = {"state": len(state), "drawn": self.drawn}
                 if message["command"] == "reset":
                     header["layout"] = layout
                 self.send_line(header, state)

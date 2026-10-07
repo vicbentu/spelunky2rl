@@ -113,7 +113,8 @@ class DockerLauncher(Launcher):
             cmd += ["-v", f"{self.dev_mod}:/opt/mod/lua:ro"]
         if self.capture_dir is not None:
             cmd += ["-v", f"{self.capture_dir}:{os.path.dirname(CAPTURE_FILE)}",
-                    "-e", "SPELUNKY2RL_CAPTURE_LAYER=1", "-e", f"SPELUNKY2RL_CAPTURE={CAPTURE_FILE}"]
+                    "-e", "SPELUNKY2RL_CAPTURE_LAYER=1", "-e", f"SPELUNKY2RL_CAPTURE={CAPTURE_FILE}",
+                    "-e", f"SPELUNKY2RL_CAPTURE_SLOTS={self.capture_frames}"]
         return cmd + self.extra_args + [self.image]
 
     def starting(self, timeout: float):

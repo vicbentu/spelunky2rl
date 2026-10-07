@@ -3,9 +3,12 @@
 // presented image to the file SPELUNKY2RL_CAPTURE and counts the frame; Python (engine/frames/
 // vulkan.py) waits for the count the mod sent with the state and reads the pixels.
 //
-// The file is a 4096-byte header (Header below, little-endian) followed by the pixels, `stride` bytes
-// per row, in the swapchain's `format`. The copy is waited for before the count moves and before the
-// present goes on, so when Python sees the count the pixels are there and are the frame's.
+// The file is a ring of the last SPELUNKY2RL_CAPTURE_SLOTS frames (default 1): a 4096-byte header
+// (Header below, little-endian), then `slots` slots of `slot_size` bytes. Frame n goes to slot
+// (n - 1) % slots: a 64-byte Slot header and the pixels, `stride` bytes per row, in the swapchain's
+// `format`. The copy is waited for before the counts move and before the present goes on, so when
+// Python sees the count the pixels are there and are the frame's; a slot's own count tells Python
+// whether the frame it wants is still there or was overwritten.
 #include <vulkan/vulkan.h>
 #include <vulkan/vk_layer.h>
 #include <fcntl.h>
@@ -22,14 +25,21 @@
 #define MAX 16
 #define HEADER 4096
 #define MAGIC 0x53324c52  // "RL2S"
-#define VERSION 1
+#define VERSION 2
+#define SLOT_HEADER 64
 
 typedef struct {
     uint32_t magic, version;
     uint64_t frame;          // frames presented so far; written last, with release order
-    uint32_t width, height, format, stride;
-    uint64_t copy_ns;        // time from the present call to the pixels in the file, last frame
+    uint32_t slots, pad;
+    uint64_t slot_size;      // bytes, Slot header included; grows with the swapchain
 } Header;
+
+typedef struct {
+    uint64_t frame;          // the frame in the slot; 0 while it is being written
+    uint32_t width, height, format, stride;
+    uint64_t copy_ns;        // time from the present call to the pixels in the file
+} Slot;
 
 // Instances, devices and queues are told apart by their loader dispatch table, the first pointer
 static void *key(const void *h) { return *(void **)h; }
@@ -87,22 +97,31 @@ static Dev *dev_of(const void *h) {
     return NULL;
 }
 
-// Formats with 4 bytes per pixel, the only ones copied. Python reads the format from the header and
+// Formats with 4 bytes per pixel, the only ones copied. Python reads the format from the slot and
 // refuses any other (the count still moves, so it does not wait for its timeout).
 static int four_bytes(VkFormat f) {
     return f == VK_FORMAT_B8G8R8A8_UNORM || f == VK_FORMAT_B8G8R8A8_SRGB ||
            f == VK_FORMAT_R8G8B8A8_UNORM || f == VK_FORMAT_R8G8B8A8_SRGB;
 }
 
+static uint64_t now_ns(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (uint64_t)t.tv_sec * 1000000000ull + t.tv_nsec;
+}
+
 // ---- the file ----
 static const char *path;     // SPELUNKY2RL_CAPTURE; NULL: present without copying
+static uint32_t slots = 1;   // SPELUNKY2RL_CAPTURE_SLOTS
 static Header *shm;
 static size_t shm_size;
 
-// Map the file with room for `pixels` bytes, growing it if the swapchain got bigger. The count goes on.
+// Map the file with room for `pixels` bytes per slot, growing it if the swapchain got bigger: the
+// slots move, so the frames in them are dropped. The count goes on.
 static void map_file(size_t pixels) {
-    size_t size = HEADER + pixels;
-    if (shm && size <= shm_size) return;
+    size_t slot_size = (SLOT_HEADER + pixels + 4095) & ~(size_t)4095;
+    if (shm && slot_size <= shm->slot_size) return;
+    size_t size = HEADER + slots * slot_size;
     int fd = open(path, O_RDWR | O_CREAT, 0666);
     if (fd < 0) { perror("spelunky2rl capture layer: open"); return; }
     if (ftruncate(fd, size) != 0) { perror("spelunky2rl capture layer: ftruncate"); close(fd); return; }
@@ -112,7 +131,24 @@ static void map_file(size_t pixels) {
     uint64_t frame = shm ? shm->frame : 0;
     if (shm) munmap(shm, shm_size);
     shm = m; shm_size = size;
+    for (uint32_t i = 0; i < slots; i++) ((Slot *)((char *)shm + HEADER + i * slot_size))->frame = 0;
     shm->magic = MAGIC; shm->version = VERSION; shm->frame = frame;
+    shm->slots = slots; shm->slot_size = slot_size;
+}
+
+// Write the next frame to its slot (pixels may be NULL: count only) and move the counts
+static void write_frame(Swap *s, const void *pixels, uint32_t stride, uint64_t t0) {
+    map_file((size_t)stride * s->extent.height);
+    if (!shm) return;
+    uint64_t n = shm->frame + 1;
+    Slot *slot = (Slot *)((char *)shm + HEADER + ((n - 1) % slots) * shm->slot_size);
+    __atomic_store_n(&slot->frame, 0, __ATOMIC_RELEASE);
+    if (pixels) memcpy((char *)slot + SLOT_HEADER, pixels, (size_t)stride * s->extent.height);
+    slot->width = s->extent.width; slot->height = s->extent.height;
+    slot->format = s->format; slot->stride = stride;
+    slot->copy_ns = now_ns() - t0;
+    __atomic_store_n(&slot->frame, n, __ATOMIC_RELEASE);
+    __atomic_store_n(&shm->frame, n, __ATOMIC_RELEASE);
 }
 
 // ---- instance ----
@@ -127,6 +163,8 @@ static VKAPI_ATTR VkResult VKAPI_CALL CreateInstance(const VkInstanceCreateInfo 
     VkResult r = create(ci, a, out);
     if (r != VK_SUCCESS) return r;
     path = getenv("SPELUNKY2RL_CAPTURE");
+    const char *n = getenv("SPELUNKY2RL_CAPTURE_SLOTS");
+    if (n && atoi(n) > 0) slots = (uint32_t)atoi(n);
     pthread_mutex_lock(&lock);
     for (int i = 0; i < MAX; i++) if (!insts[i].key) {
         insts[i].key = key(*out);
@@ -282,27 +320,14 @@ static VkCommandBuffer command_buffer(Dev *d, VkQueue q) {
     return d->cmds[family];
 }
 
-static uint64_t now_ns(void) {
-    struct timespec t;
-    clock_gettime(CLOCK_MONOTONIC, &t);
-    return (uint64_t)t.tv_sec * 1000000000ull + t.tv_nsec;
-}
-
-// Count a presented frame that was not copied (unsupported format): Python sees the format and fails
-static void count_only(Swap *s) {
-    map_file(0);
-    if (!shm) return;
-    shm->width = s->extent.width; shm->height = s->extent.height; shm->format = s->format; shm->stride = 0;
-    __atomic_store_n(&shm->frame, shm->frame + 1, __ATOMIC_RELEASE);
-}
-
 static VKAPI_ATTR VkResult VKAPI_CALL QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *info) {
     Dev *d = dev_of(queue);
     Swap *s = NULL;
     for (int i = 0; i < 4 && path && info->swapchainCount; i++)
         if (d->swaps[i].handle == info->pSwapchains[0]) s = &d->swaps[i];
     if (!s) return d->QueuePresentKHR(queue, info);
-    if (!s->buffer) { count_only(s); return d->QueuePresentKHR(queue, info); }
+    // a frame that cannot be copied (unsupported format) is still counted: Python sees the format and fails
+    if (!s->buffer) { write_frame(s, NULL, 0, now_ns()); return d->QueuePresentKHR(queue, info); }
 
     uint64_t t0 = now_ns();
     VkImage image = s->images[info->pImageIndices[0]];
@@ -334,15 +359,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL QueuePresentKHR(VkQueue queue, const VkPre
     d->QueueSubmit(queue, 1, &si, d->fence);
     d->WaitForFences(d->device, 1, &d->fence, VK_TRUE, UINT64_MAX);
 
-    uint32_t stride = s->extent.width * 4;
-    map_file((size_t)stride * s->extent.height);
-    if (shm) {
-        memcpy((char *)shm + HEADER, s->mapped, (size_t)stride * s->extent.height);
-        shm->width = s->extent.width; shm->height = s->extent.height;
-        shm->format = s->format; shm->stride = stride;
-        shm->copy_ns = now_ns() - t0;
-        __atomic_store_n(&shm->frame, shm->frame + 1, __ATOMIC_RELEASE);
-    }
+    write_frame(s, s->mapped, s->extent.width * 4, t0);
 
     VkPresentInfoKHR mine = *info;
     mine.waitSemaphoreCount = 0; mine.pWaitSemaphores = NULL;

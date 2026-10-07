@@ -3,9 +3,10 @@
 -- Python sends a command and waits for one game state. The mod takes the command, lets the game
 -- run the frames it needs, sends the state and holds the game until the next command arrives.
 --
--- With render, only the last frame of a command is drawn, and the state is sent once it has been
--- (ON.PRE_GAME_LOOP of the next turn of the game loop) with the count of frames drawn so far: the
--- Vulkan layer counts the frames it copies the same way, so Python knows which image is the state's.
+-- With render, only the last frame of a command is drawn (with render_all, every frame, one per turn
+-- of the game loop), and the state is sent once it has been (ON.PRE_GAME_LOOP of the next turn) with
+-- the count of frames drawn so far: the Vulkan layer counts the frames it copies the same way, so
+-- Python knows which images are the command's and which one is the state's.
 local protocol = require("spelunky2rl.protocol")
 local control = require("spelunky2rl.control")
 local input = require("spelunky2rl.input")
@@ -21,10 +22,12 @@ local frames_left = 0               -- frames to run before `command` is answere
 local speedup = false
 local state_updates = 0
 local render = false
+local render_all = false            -- with render: draw every frame, not only the last one
 local fast_forwarding = false       -- inside our own update_state() calls
 local layout = nil                  -- of the states of this episode, sent with the reset answer
 local drawn = 0                     -- frames drawn since the mod loaded
 local pending = nil                 -- with render: `drawn` when the last frame of `command` ran
+local undrawn = nil                 -- with render_all: `drawn` when the last logic frame ran
 
 -- The frames of `command` have run: send the state it is waiting for.
 local function answer()
@@ -62,6 +65,7 @@ local function start()
         speedup = command.speedup
         state_updates = command.state_updates
         render = command.render
+        render_all = render and command.render_all or false
         control.apply_options(command)
         input.set_manual_control(command.manual_control)
 
@@ -78,7 +82,7 @@ local function start()
     end
 
     -- with render only the last frame is drawn: the game runs that one, the others are logic only
-    if render then
+    if render and not render_all then
         run_logic_frames(frames_left - 1)
     end
 end
@@ -93,6 +97,7 @@ end
 local function update()
     if pending then return end  -- ON.PRE_UPDATE skips these updates; just in case
     control.disable_pause()
+    undrawn = drawn
 
     frames_left = frames_left - 1
     if frames_left <= 0 then
@@ -135,10 +140,12 @@ function M.on_pre_game_loop()
 end
 
 -- ON.PRE_UPDATE, before every logic frame (also the ones run by update_state()). While the answer
--- waits for the drawing the game must not move on: true skips the update. Otherwise, the agent's
--- input. One callback for both: it runs ~200 times per real frame without render.
+-- waits for the drawing the game must not move on: true skips the update. With render_all, neither
+-- while the last frame waits for its drawing: with the speedhack the game runs several updates per
+-- drawing. Otherwise, the agent's input. One callback for all: it runs ~200 times per real frame
+-- without render.
 function M.on_pre_update()
-    if pending then return true end
+    if pending or (render_all and undrawn == drawn) then return true end
     input.apply()
 end
 

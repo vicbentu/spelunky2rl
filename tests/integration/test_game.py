@@ -278,9 +278,11 @@ def test_render_resolution():
         env.close()
 
 
-def test_render_does_not_change_the_game():
-    """With render the mod runs all frames of a step but the last with update_state() and answers
-    after drawing; the game must be the same as without render."""
+@pytest.mark.parametrize("render_mode", ["rgb_array", "rgb_array_list"])
+def test_render_does_not_change_the_game(render_mode):
+    """With render the mod runs all frames of a step but the last with update_state() (with
+    rgb_array_list it draws them all, one per turn of the game loop) and answers after drawing; the
+    game must be the same as without render."""
     actions = np.random.default_rng(1).integers(0, DefaultEnv.action_space.nvec, size=(200, 8))
 
     def trajectory(**kwargs):
@@ -295,7 +297,7 @@ def test_render_does_not_change_the_game():
             env.close()
 
     needs_capture()
-    plain, rendered = trajectory(), trajectory(render_enabled=True, render_resolution=(160, 90))
+    plain, rendered = trajectory(), trajectory(render_mode=render_mode, render_resolution=(160, 90))
     for step, (a, b) in enumerate(zip(plain, rendered)):
         difference = first_difference(a, b)
         assert difference is None, f"step {step}: {difference}"
@@ -323,5 +325,26 @@ def test_render_returns_the_state_frame():
         again = env.render()
         distance = lambda a, b: np.abs(a.astype(int) - b).mean()
         assert distance(again, first) < distance(again, other) / 4
+    finally:
+        env.close()
+
+
+def test_render_list_returns_every_frame():
+    """rgb_array_list: reset's frame, then the frames_per_step of each step, all different while the
+    player runs."""
+    needs_capture()
+    env = GetToExit(render_mode="rgb_array_list", frames_per_step=6, render_resolution=(320, 180), god_mode=True)
+    try:
+        env.reset(seed=3)
+        frames = env.render()
+        assert len(frames) == 1 and frames[0].shape == (180, 320, 3)
+        for _ in range(3):
+            env.step([2, 1, 0])
+        frames += env.render()
+        assert len(frames) == 1 + 3 * 6 and env.render() == []
+        assert all(not np.array_equal(a, b) for a, b in zip(frames, frames[1:]))
+        env.step([2, 1, 0])
+        env.reset(seed=5)
+        assert len(env.render()) == 1
     finally:
         env.close()

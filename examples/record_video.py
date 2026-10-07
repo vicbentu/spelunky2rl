@@ -40,7 +40,7 @@ MODEL_PATH = "./models_get_to_exit/final_model.zip"
 # Recording settings
 DURATION = 30           # Video length in seconds (game time, not wall-clock time)
 OUTPUT_DIR = "./videos"  # Directory to save videos
-FPS = 10                # One video frame per step: 60 game frames/s / frames_per_step=6 = real time
+FPS = 60                # Every game frame (render_mode="rgb_array_list"): the game runs at 60 frames/s
 USE_LSTM = True         # Set to True if model uses RecurrentPPO, False for PPO
 DETERMINISTIC = True    # Use deterministic actions (recommended for videos)
 
@@ -51,7 +51,7 @@ def record_agent_video(
     model_path: str,
     duration: int = 30,
     output_dir: str = "./videos",
-    fps: int = 10,
+    fps: int = 60,
     use_lstm: bool = True,
     deterministic: bool = True
 ):
@@ -91,7 +91,7 @@ def record_agent_video(
             # The game folder comes from SPELUNKY2RL_GAME_DIR (or pass game_dir="...")
 
             frames_per_step=6,      # Same as train_get_to_exit.py: the model acts at the pace it learned
-            render_enabled=True,    # ENABLE FRAME GRABBING
+            render_mode="rgb_array_list",  # render() returns every frame since the last call
             manual_control=False,
             god_mode=False
         )
@@ -114,9 +114,9 @@ def record_agent_video(
         episode_start = np.array([True])
 
         # -------- Setup Video Writer -----------------------------------------
-        # Get frame dimensions
-        first_frame = env.render()
-        h, w, c = first_frame.shape
+        # Get frame dimensions: after reset, render() returns the reset's frame
+        frames = env.render()
+        h, w, c = frames[0].shape
         print(f"✓ Video dimensions: {w}x{h}")
 
         # Create video writer
@@ -129,13 +129,18 @@ def record_agent_video(
         print("✓ Video writer initialized")
         print()
 
+        def write(frames):
+            for frame in frames:
+                video_writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))  # render() is RGB, OpenCV wants BGR
+            return len(frames)
+
         # -------- Record Video -----------------------------------------------
         print(f"Recording {duration} seconds of gameplay...")
         print("Press Ctrl+C to stop early")
         print()
 
         start_time = time.time()
-        frame_count = 0
+        frame_count = write(frames)
         episode_count = 0
         last_progress_time = start_time
 
@@ -157,10 +162,8 @@ def record_agent_video(
             # Update episode start flag for LSTM
             episode_start = np.array([done or truncated])
 
-            # Capture and write frame
-            frame = env.render()
-            video_writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))  # render() is RGB, OpenCV wants BGR
-            frame_count += 1
+            # Write the frames of this step (and of the reset before it, if there was one)
+            frame_count += write(env.render())
 
             # Reset if episode ends
             if done or truncated:

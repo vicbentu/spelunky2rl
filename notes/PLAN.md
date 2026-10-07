@@ -237,7 +237,35 @@ render). Sin render, pasos/s iguales que hoy (la capa apagada). Test de integrac
 nivel nuevo; los tests de render existentes siguen en verde. Tests unitarios del `FrameSource`
 (fichero falso: espera al contador, timeout, cabecera mala). Suite completa en verde.
 
-## 6. `"rgb_array_list"`: todos los frames del paso  ·  pending
+## 6. `"rgb_array_list"`: todos los frames del paso  ·  done [2026-10-07 23:13]
+Resultado con la sonda de color sobre el mod del repo: en cada paso, `render()` devuelve k frames
+consecutivos y el último es el del estado; tras `reset`, uno, el del estado. Sin un solo fallo en GPU y
+CPU, con k=1 y k=6, de 160x90 a 1280x720, y en 1.500 pasos con ~20 resets y muertes (GPU y CPU).
+Medido (pasos/s con k=6, `render()` incluido; GPU / CPU):
+
+| Resolución | GPU | CPU |
+|---|---|---|
+| 160x90 | 270–280 | 53 |
+| 320x180 | 240–260 | 50 |
+| 640x360 | 140–150 | 33 |
+| 1280x720 | 47–49 | 15–16 |
+
+Por frame cuesta más que el frame único de `"rgb_array"` porque la capa espera la copia de cada
+`Present` (pasar BGRA a RGB en Python es 0,6 ms a 1280x720). Sin cambios de protocolo: `render_all`
+en el mensaje de reset; `PROTOCOL_VERSION` sigue en 3, que no ha salido en ninguna release.
+
+El criterio sobre `RecordVideo` era erróneo: guarda solo el último frame de cada lista. Se graba con
+`gymnasium.utils.save_video.save_video` (301 frames a 60 FPS para 50 pasos), y `render_fps` pasa a
+60/k con `"rgb_array"` para que `RecordVideo` grabe a tiempo real (51 frames a 10 FPS); ver
+Q/render-fps-per-mode.
+
+Tests: `test_frames.py`, con el anillo (fichero falso, frames perdidos) y la lista de `render()`;
+`test_docker_capture` (`SPELUNKY2RL_CAPTURE_SLOTS`); y de integración `test_render_list_returns_every_frame`
+y `test_render_does_not_change_the_game` con los dos modos. Unitarios 116 y de integración 15 en
+verde. Un fallo intermitente de `test_parallel_envs` (sin render) va a BACKLOG.
+
+Scripts en `~/Desktop/tmp/spelunky/render-bench/step6/`: `lcheck.py` (sonda), `lperf.py` y
+`recordvideo.py` (con `uv run --no-project --with moviepy --with-editable .`).
 - Capa: el fichero pasa a ser un anillo de R ranuras (R por variable de entorno; el frame n va a la
   ranura n mod R, la cabecera dice R). Python lee los frames desde el último que leyó hasta `drawn`.
   Sin intercambio `frame`/`next` con Python: el mod solo espera al final del paso, como en el paso 5.
