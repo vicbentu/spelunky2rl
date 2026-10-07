@@ -62,7 +62,7 @@ por `state_updates`), `capture.py <w> <h> <renderer>` (paso vs `render()`), `vra
 |---|---|---|---|
 | Entrenar sin imágenes | `True` (defecto) | `None` | N alto (200 salvo que el paso 1 diga otra cosa), pantalla 160x90, sin dibujar |
 | Entrenar con imágenes | `True` | `"rgb_array"` | en cada paso, los frames 1..k-1 solo lógica y el k-ésimo dibujado; `render()` → ese frame |
-| Grabar | `True` | `"rgb_array_list"` | los k frames dibujados y capturados uno a uno; `render()` → lista de los frames desde la última llamada |
+| Grabar | `True` | `"rgb_array_list"` | los k frames dibujados, cada uno guardado por la capa de Vulkan (paso 6); `render()` → lista de los frames desde la última llamada |
 | Mirar en vivo (futuro, sin visor hoy) | `False` | cualquiera | tiempo real, N=0 |
 
 (k = `frames_per_step`.) `render_enabled=True` sigue siendo alias de `render_mode="rgb_array"`.
@@ -75,7 +75,8 @@ acciones (una acción mantenida k frames), `render_resolution`, la API de `reset
 
 Cambios incompatibles (van en las notas de la release): `speedup` pasa a `True` por defecto;
 `state_updates` deja de existir (pasarlo da `TypeError` con un mensaje que explique por qué y qué
-hacer); con render, la imagen de `render()` puede cambiar un frame si el paso 4 confirma el desfase.
+hacer); con render, la imagen de `render()` pasa a ser la del estado (hoy es 1–3 frames anterior), y
+la imagen de Docker lleva una capa de Vulkan.
 
 ## 1. ¿Sobra el speedhack?  ·  done [2026-10-07 14:54]
 Resultado (pasos/s, 3 pasadas, `GetToExit`, ambos mods montados con `SPELUNKY2RL_DEV_MOD`):
@@ -176,34 +177,71 @@ devuelve hoy `render()` respecto al estado (mismo, anterior u otro) y en qué ca
 mandar el estado para que la imagen corresponda. Sin cambios en el código del repo.
 
 ## 5. `"rgb_array"`: dibujar solo el último frame del paso, y que sea el del estado  ·  pending
-- Lua: el mod dibuja solo el frame que se va a responder (hoy `skip_render` mira un flag global;
-  pasa a mirar también si es el último frame del paso, `frames_left`), y los anteriores del paso se
-  hacen como lógica pura. Diseño a decidir con lo del paso 4: o bien `update_state()` k-1 veces y un
-  frame real, o bien frames reales con el dibujado saltado. Lo primero ahorra también el `Present`.
-- Si el paso 4 encontró desfase: mover el envío del estado al primer callback tras el `Present` del
-  último frame, para que `render()` devuelva la imagen del estado. Esto cambia cuándo responde el mod;
-  `PROTOCOL_VERSION` sube a 3 si cambia la forma de algún mensaje (en Lua y en `engine/protocol.py`).
+Diseño (decidido tras el paso 4): la imagen se coge con una **capa de Vulkan**, no del Xvfb. El mod no
+puede saber cuándo el frame está en pantalla (el `Present` de DXVK va en otro hilo y la API de
+Playlunky no tiene callback tras él ni lectura del framebuffer); descartados dibujar dos veces (sucio,
++3 ms en CPU), una marca en la imagen y XDamage (desfase constante de 3 que hay que calibrar).
+Prototipo en `~/Desktop/tmp/spelunky/render-bench/` (`vklayer/`, `probe5`, `vksync.py`, `vkperf.py`,
+imagen local `spelunky2rl-game:vkproto`): imagen = estado en el 100 % de los casos (GPU y CPU, k=1 y 6,
+160x90–1280x720, 1.500 pasos con ~20 resets y muertes), desfase 0 sin calibrar, sin timeouts. Coste
+de `render()` frente a hoy (que devuelve un frame viejo sin esperar), ms por paso con todos los frames
+dibujados: GPU 160x90 2,09→2,13, 640x360 2,69→2,93; CPU 160x90 8,66→9,66, 640x360 13,1→15,1. La
+espera es sobre todo la GPU acabando el frame (copia: 0,15 ms GPU a 320x180, 0,5 ms a 1280x720).
+
+- **Capa** (`docker/vklayer/`: `layer.c` del prototipo, ~340 líneas, y su manifiesto): capa implícita
+  que solo se activa con `SPELUNKY2RL_CAPTURE_LAYER=1`. Añade `TRANSFER_SRC` al swapchain; en cada
+  `vkQueuePresentKHR` copia la imagen a un buffer visible por la CPU, espera su fence, la copia al
+  fichero `SPELUNKY2RL_CAPTURE` (cabecera de 4096 bytes: magic, versión, contador de frames, ancho,
+  alto, formato, stride, `copy_ns`; píxeles BGRA detrás) y sube el contador con release. Sin la
+  variable no hace nada. Etapa de compilación en `docker/Dockerfile` (gcc + `libvulkan-dev`); el
+  `.so` y el manifiesto (`/usr/share/vulkan/implicit_layer.d`) en la imagen final. Rechaza con un
+  error claro (en el log del juego, y Python con timeout) formatos que no sean de 4 bytes.
+- **Mod** (`spelunky2rl/session.lua`, `control.lua`, `main.lua`), solo con render:
+  - Lleva `drawn` (frames dibujados, contado en `ON.RENDER_POST_HUD`) y lo manda en las respuestas de
+    `reset` y `step` → `PROTOCOL_VERSION` 3 (Lua y `engine/protocol.py`, y `docs/architecture.md`).
+  - Respuesta aplazada (probada en `probe2`/`probe4`): al acabar el último frame del paso queda
+    pendiente; responde en `ON.PRE_GAME_LOOP` cuando ese frame ya se ha dibujado, y mientras tanto
+    `ON.PRE_UPDATE` devuelve `true` (no avanza la lógica).
+  - Solo se dibuja el último frame del paso; los anteriores, solo lógica. Elegir midiendo entre
+    `update_state()` k-1 veces y un frame real (ahorra también el `Present`) o frames reales con
+    `skip_render` mirando `frames_left`. El contador de la capa cuenta `Present`s, no dibujados: en el
+    prototipo coincidían porque se dibujaba todo; comprobar que sigue igual con frames sin dibujar.
+- **Python**:
+  - `engine/frames/`: nuevo `FrameSource` que lee el fichero con `np.memmap`; `render()` espera (con
+    `step_timeout`) a que el contador llegue al `drawn` de la última respuesta y devuelve RGB
+    (`[:, :, 2::-1]`). Copia del array al devolverlo (el siguiente frame lo sobrescribe).
+  - Launcher docker, con render: un directorio propio por instancia en `/dev/shm`, montado en el
+    contenedor, y las dos variables de entorno; se borra en `close()`. w·h·4 bytes por instancia.
+  - Launcher wine: la capa no está en el host; sigue con mss/X11 (frame viejo, como hoy) y la doc lo
+    dice. Instalar la capa en el host va a BACKLOG.
 - Reconstruir la imagen local (`docker build -f docker/Dockerfile -t
   ghcr.io/vicbentu/spelunky2rl-game:<versión dev> .`).
-Criterio: con la sonda del paso 4, el frame de `render()` es el del estado en 50 pasos seguidos con
-`frames_per_step` 1 y 6. Con CPU a 160x90 el paso con render baja de 8,9 ms (medir; se espera cerca de
-los ~2 ms sin render). Test de integración que lo comprueba sin sonda (p. ej. dos `render()` tras pasos
-distintos dan imágenes distintas, y el test de render existente sigue en verde). Suite completa en
-verde.
+Criterio: con la sonda de color (`probe5` + `vksync.py` adaptado al repo), imagen = estado en 300
+pasos seguidos con k=1 y k=6, GPU y CPU, y en 1.500 pasos con resets y muertes. Con CPU a 160x90 el
+paso con render baja de los 8,7 ms de hoy (medir con `vkperf.py`; se espera cerca de los ~2 ms sin
+render). Sin render, pasos/s iguales que hoy (la capa apagada). Test de integración sin sonda: dos
+`render()` tras pasos distintos dan imágenes distintas y el de la imagen tras `reset` es la del
+nivel nuevo; los tests de render existentes siguen en verde. Tests unitarios del `FrameSource`
+(fichero falso: espera al contador, timeout, cabecera mala). Suite completa en verde.
 
-## 6. `"rgb_array_list"`: todos los frames, capturados uno a uno  ·  pending
-- Python no puede capturar frames intermedios por su cuenta (el juego va por delante). Sincronizar:
-  con este modo, tras presentar cada frame del paso el mod manda un mensaje corto (`frame`) y espera
-  un `next` de Python, que captura entre medias; el último frame del paso es el estado. Mensajes
-  nuevos → `PROTOCOL_VERSION` (si no subió en el paso 5) y su descripción en `docs/architecture.md`.
+## 6. `"rgb_array_list"`: todos los frames del paso  ·  pending
+- Capa: el fichero pasa a ser un anillo de R ranuras (R por variable de entorno; el frame n va a la
+  ranura n mod R, la cabecera dice R). Python lee los frames desde el último que leyó hasta `drawn`.
+  Sin intercambio `frame`/`next` con Python: el mod solo espera al final del paso, como en el paso 5.
+- Mod, en este modo: cada frame de lógica se dibuja. Con el speedhack el juego se salta dibujados, así
+  que `ON.PRE_UPDATE` devuelve `true` hasta que el frame anterior se ha dibujado (el mismo mecanismo
+  que la respuesta aplazada, frame a frame). N=0 siempre.
+- R ≥ k: en un paso se presentan k frames y Python los lee antes de mandar el siguiente comando. Al
+  resetear se presentan más (transición); solo cuenta el último. Si Python ve que se perdió alguno
+  (contador − último leído > R), error claro.
 - `render_mode` admite `"rgb_array_list"`; `metadata["render_modes"]` lo incluye. `render()` devuelve
   la lista de frames desde la última llamada (o desde `reset`, que la vacía y añade el suyo), como
-  `gymnasium.wrappers.RenderCollection`. Con este modo N=0 siempre.
+  `gymnasium.wrappers.RenderCollection`.
 - `examples/record_video.py` pasa a usarlo (o a `gymnasium.wrappers.RecordVideo`).
-Criterio: con k=6, `render()` tras un paso devuelve 6 frames; con la sonda del paso 4 sus contadores
-son consecutivos y el último es el del estado. `RecordVideo` sobre el entorno escribe un vídeo de
-60 FPS con 6 frames por paso. Tests unitarios (con `FakeLauncher`/`FakeLua`) del intercambio
-`frame`/`next` y de la lista; test de integración que graba unos pasos. Suite completa en verde.
+Criterio: con k=6, `render()` tras un paso devuelve 6 frames; con la sonda sus contadores son
+consecutivos y el último es el del estado. `RecordVideo` sobre el entorno escribe un vídeo de 60 FPS
+con 6 frames por paso. Tests unitarios de la lista y del anillo (fichero falso, también la pérdida de
+frames); test de integración que graba unos pasos. Suite completa en verde.
 
 ## 7. Documentación para usuarios  ·  pending
 Hoy quien usa el entorno no tiene una referencia completa: `readme.md` (también la página de PyPI) no
@@ -232,7 +270,8 @@ Los pasos 3, 5 y 6 ya corrigen lo que dejan obsoleto; este paso deja la referenc
   `render_mode`, enlace a la guía en vez de repetirlo.
 - `docs/architecture.md` (para quien toca el código, no para usuarios): mecanismo de velocidad
   (cómo elige el motor N, speedhack), en qué callback se manda el estado y por qué (paso 4), el modo
-  de dibujar solo el último frame, el intercambio `frame`/`next` y `PROTOCOL_VERSION`.
+  de dibujar solo el último frame, la capa de Vulkan (cómo se activa, el fichero y su anillo) y
+  `PROTOCOL_VERSION`.
 - `examples/README.md` y la lista de ejemplos de `readme.md` al día con `record_video.py`.
 - Nota para la release (en el cuerpo del commit que cierra el paso, para copiarla a la GitHub
   Release): `speedup` por defecto `True`, `state_updates` eliminado, `render_mode="rgb_array_list"`,
