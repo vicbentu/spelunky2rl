@@ -216,3 +216,18 @@ def test_render_returns_game_frames():
         assert frame.mean() > 20
     finally:
         env.close()
+
+
+def test_render_resolution():
+    """The game fills a screen of any 16:9 size, with no black bars."""
+    pytest.importorskip("mss")
+    env = GetToExit(render_enabled=True, render_resolution=(320, 180), god_mode=True)
+    try:
+        env.reset(seed=3)
+        for _ in range(10):
+            env.step([2, 1, 0])
+        frame = env.render()
+        assert frame.shape == (180, 320, 3)
+        assert frame[:8].mean() > 20 and frame[-8:].mean() > 20
+    finally:
+        env.close()

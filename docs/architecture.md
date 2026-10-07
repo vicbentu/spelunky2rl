@@ -134,6 +134,10 @@ used: it draws its UI into every frame.
 
 `local.cfg` opens the game as a borderless window filling the Xvfb screen: fullscreen leaves every
 frame black under Wine + Xvfb, and a framed window leaves a black band where the title bar would be.
+The game draws at the screen's size (`resolutionx/y` do not matter), keeping 16:9 with black bars
+otherwise. The engine sets `launcher.screen` before starting it: `render_resolution` when
+`render_enabled`, else 160x90: the screen size changes the speed even when the mod skips drawing
+the level. The Docker launcher passes it as `SCREEN=WxH`.
 
 ### The Lua mod (mod/lua/)
 

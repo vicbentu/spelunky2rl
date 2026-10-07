@@ -16,6 +16,23 @@ from .fields import resolve_fields
 from .protocol import Connection, StateLayout, check_hello
 
 HELLO_TIMEOUT = 15.0  # the mod says hello right after connecting
+# The screen size changes the speed even when the mod skips drawing the level (with lavapipe,
+# 640x360 -> 160x90 is ~20 % more steps/s); at 16x9 the game does not start
+HIDDEN_SCREEN = (160, 90)
+MIN_RENDER_RESOLUTION = (64, 36)
+
+
+def check_render_resolution(resolution) -> Tuple[int, int]:
+    try:
+        width, height = (int(n) for n in resolution)
+    except (TypeError, ValueError):
+        raise ValueError(f"render_resolution must be (width, height), got {resolution!r}") from None
+    if width < MIN_RENDER_RESOLUTION[0] or height < MIN_RENDER_RESOLUTION[1]:
+        raise ValueError(f"render_resolution must be at least 64x36, got {width}x{height}")
+    # the game keeps 16:9 and fills the rest of the screen with black bars
+    if abs(width * 9 - height * 16) > width * 9 / 100:
+        raise ValueError(f"render_resolution must be 16:9 (e.g. 320x180, 1280x720), got {width}x{height}")
+    return width, height
 
 
 class SpelunkyRLEngine(gym.Env):
@@ -41,6 +58,7 @@ class SpelunkyRLEngine(gym.Env):
             frames_per_step: int = 6,
             render_enabled: bool = False,
             render_mode: Optional[str] = None,
+            render_resolution: Tuple[int, int] = (640, 360),
             launcher: Union[str, Launcher] = "auto",
             renderer: str = "auto",
             launcher_options: Optional[Dict[str, Any]] = None,
@@ -61,6 +79,8 @@ class SpelunkyRLEngine(gym.Env):
             renderer: "auto" (GPU if Docker can use one, else CPU), "gpu" or "cpu".
             render_enabled / render_mode: capture frames for render(); render_mode="rgb_array"
                 (as passed by gymnasium.make) is the same as render_enabled=True.
+            render_resolution: (width, height) of the frames render() returns, 16:9 and at least
+                64x36. The game draws at this size, so a smaller one also runs faster.
             launcher_options: extra keyword arguments for the launcher, e.g. {"image": ...}.
             **kwargs: default reset options (see _game_reset). An unknown one is a TypeError.
         """
@@ -92,7 +112,9 @@ class SpelunkyRLEngine(gym.Env):
         self.server = None
         self.frame_source: Optional[FrameSource] = None
 
+        self.render_resolution = check_render_resolution(render_resolution)
         self.launcher = make_launcher(launcher, self.game_dir, renderer=renderer, options=launcher_options)
+        self.launcher.screen = self.render_resolution if self.render_enabled else HIDDEN_SCREEN
         self._game_init()
 
 

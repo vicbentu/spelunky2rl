@@ -101,6 +101,7 @@ class DockerLauncher(Launcher):
                # X display numbers must be unique host-wide; the port already is
                "-e", f"PORT={port}", "-e", f"DISPLAYNUM={port}",
                "-e", f"RENDERER={'cpu' if self.renderer == 'cpu' else 'auto'}",
+               "-e", "SCREEN={}x{}".format(*self.screen),
                "-v", f"{self.game_dir}:/game:ro",
                "-v", f"{self.cache.path}:/cache"]
         if self.use_gpu:

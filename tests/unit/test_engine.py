@@ -61,6 +61,19 @@ def test_unknown_reset_option_is_rejected(make_env):
     assert not env.fake_lua.messages
 
 
+def test_screen_follows_render_resolution(make_env):
+    assert make_env(DefaultEnv, render_enabled=True).launcher.screen == (640, 360)
+    assert make_env(DefaultEnv, render_enabled=True, render_resolution=(1280, 720)).launcher.screen == (1280, 720)
+    # nobody reads the frames: a small screen is faster
+    assert make_env(DefaultEnv, render_resolution=(1280, 720)).launcher.screen == (160, 90)
+
+
+@pytest.mark.parametrize("resolution", [(400, 400), (32, 18), (640,), "640x360"])
+def test_bad_render_resolution_is_rejected(make_env, resolution):
+    with pytest.raises(ValueError, match="render_resolution"):
+        make_env(DefaultEnv, render_resolution=resolution)
+
+
 def test_fields_are_sent_on_reset_only(make_env):
     class WideView(GetToExit):
         data_to_send = {"map_info": {"width": 41, "height": 21}, "dist_to_goal": {}}

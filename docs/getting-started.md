@@ -101,6 +101,7 @@ env = SpelunkyEnv(
     game_dir="/path/to/Spelunky 2",   # Optional: folder with Spel2.exe (default: $SPELUNKY2RL_GAME_DIR)
     frames_per_step=6,                # Optional: Game frames per RL step (default: 6)
     render_enabled=False,             # Optional: Enable render() method (default: False)
+    render_resolution=(640, 360),     # Optional: Size of render() frames, 16:9 (default: 640x360)
     launcher="auto",                  # Optional: "docker" (default) or "wine"
     renderer="auto",                  # Optional: "gpu", "cpu" or "auto" (GPU if Docker can use one)
     launcher_options=None,            # Optional: e.g. {"image": "..."} for Docker
@@ -172,6 +173,18 @@ env = SpelunkyEnv(
 the game is no longer the bottleneck (about 1,700 steps/s per instance with `frames_per_step=6`
 measured on a Ryzen 9 7900X); the rest is the per-step exchange with Python. Do not use
 `state_updates` when `render_enabled=True`: the frames you capture would skip most of the action.
+
+The game draws at `render_resolution`, so a smaller one is faster. Measured with `speedup=True`, no
+`state_updates`, calling `render()` every step, on a Ryzen 9 7900X and an RTX 3060:
+
+| `render_resolution` | GPU renderer | CPU renderer (lavapipe) |
+|---|---|---|
+| 320x180 | 440 steps/s | 107 steps/s |
+| 640x360 | 370 steps/s | 77 steps/s |
+| 1280x720 | 164 steps/s | 39 steps/s |
+
+With `render_enabled=False` the screen size still matters (with lavapipe, 640x360 runs ~20 % slower
+than 160x90), so the game runs on a 160x90 screen whatever `render_resolution` says.
 
 ### Many environments
 

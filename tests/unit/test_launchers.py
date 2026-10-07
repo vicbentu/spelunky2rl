@@ -57,6 +57,9 @@ def test_docker_command(game_dir, tmp_path, no_gpu):
     joined = " ".join(cmd)
     assert "--network host" in joined
     assert "PORT=4242" in joined and "DISPLAYNUM=4242" in joined
+    assert "SCREEN=640x360" in joined
+    launcher.screen = (320, 180)
+    assert "SCREEN=320x180" in " ".join(launcher.command(4242))
     assert f"{game_dir}:/game:ro" in joined
     assert f"{tmp_path / 'cache'}:/cache" in joined
     assert "--gpus" not in cmd

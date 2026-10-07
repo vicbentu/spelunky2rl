@@ -18,6 +18,10 @@ class Launcher:
     until the mod connects, and stop() on close. start() may be called again after stop() to retry.
     """
 
+    # (width, height) of the X screen the game draws on, read by start(); the engine sets it from
+    # render_resolution
+    screen = (640, 360)
+
     def starting(self, timeout: float) -> "contextlib.AbstractContextManager[None]":
         """Held from before start() until the mod has connected."""
         return contextlib.nullcontext()

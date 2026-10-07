@@ -29,13 +29,6 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   soportados junto a las versiones fijadas de la imagen, comprobarla antes de lanzar y en `doctor`, y
   decir en el error qué build tiene el usuario y cuál espera la imagen. Venía de la tabla de riesgos
   del plan de retoma.
-- [2026-09-28 15:38 @9f537a6] Resolución de `render()` configurable (hoy fija en 640x360). La deciden dos
-  cosas que deben coincidir: el tamaño de pantalla de Xvfb (`docker/entrypoint.sh` y `WineLauncher`,
-  `640x360x24`) y `local.cfg` (`engine/launchers/config/local.cfg`: ventana `window_mode=2` al
-  `window_scale=100` % de la pantalla; `resolutionx/y`). Propuesta: parámetro `render_resolution=(w, h)`
-  → variable `RESOLUTION` al contenedor → el entrypoint arranca Xvfb a ese tamaño y escribe `local.cfg`
-  a juego. Sin probar: que `window_scale=100` llene pantallas mayores (sí lo hace a 640x360) y el coste
-  de render (GPU poco; con `renderer="cpu"` crece con los píxeles). Solo afecta con `render_enabled`.
 - [2026-09-30 22:59 @df58df3] Ruta del juego permanente y configurable desde el CLI. Hoy solo existe
   `game_dir=` o `SPELUNKY2RL_GAME_DIR` (resuelto en `make_launcher`, `engine/launchers/__init__.py`); no
   hay fichero de configuración y el `export` se pierde al cerrar la terminal (`docs/getting-started.md`
