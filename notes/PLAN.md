@@ -76,7 +76,20 @@ Cambios incompatibles (van en las notas de la release): `speedup` pasa a `True` 
 `state_updates` deja de existir (pasarlo da `TypeError` con un mensaje que explique por qué y qué
 hacer); con render, la imagen de `render()` puede cambiar un frame si el paso 4 confirma el desfase.
 
-## 1. ¿Sobra el speedhack?  ·  pending
+## 1. ¿Sobra el speedhack?  ·  done [2026-10-07 14:54]
+Resultado (pasos/s, 3 pasadas, `GetToExit`, ambos mods montados con `SPELUNKY2RL_DEV_MOD`):
+
+| Caso | GPU normal | GPU sin speedhack | CPU normal | CPU sin speedhack |
+|---|---|---|---|---|
+| Sin render, N=200 | 1.347* / 1.599 / 1.596 | 1.574 / 1.563 / 1.616 | 1.562 / 1.589 / 1.559 | 1.588 / 1.592 / 1.546 |
+| Sin render, N=1000 | 1.401* / 1.627 / 1.608 | 1.560 / 1.602 / 1.561 | 1.610 / 1.582 / 1.585 | 1.552 / 1.622 / 1.588 |
+| Render 160x90, N=0 | 420 / 488 / 479 | 10 / 10 / 10 | 116 / 115 / 115 | 10 / 10 / 10 |
+
+(*) primer arranque de la tanda. Sin render no se pierde nada (todo dentro del ruido); con render
+cada frame es real y sin speedhack va a 60 FPS (60/6 = 10 pasos/s). N=200 y N=1000 dan lo mismo:
+`STATE_UPDATES = 200`. Decisión: `speedup` controla N, y el speedhack solo se pone con render
+(paso 3). Script: `bench1.py` (copia de `nbench.py` con render opcional).
+
 Con `state_updates` alto, el juego solo hace un frame real cada 1+N frames de lógica; aunque esperase a
 los 60 FPS el techo sería 60·(1+N)/k pasos/s (≈2.000 con N=200, k=6), por encima del de ~1.600. Medir
 con una copia del mod en el scratchpad (`SPELUNKY2RL_DEV_MOD`) donde `set_speedup` llame a
@@ -102,7 +115,8 @@ Si falla, parar: el resto del plan depende de esto (va a QUESTIONS con lo encont
   del paso 1) si `speedup` y sin render, si no 0. Pasar `state_updates=` da `TypeError` explicando
   que ya no existe y que el motor lo fija (antes de la comprobación genérica de opciones
   desconocidas, en `__init__` y en `reset`).
-- Lua: lo que decida el paso 1 sobre el speedhack (si nada, no se toca).
+- Lua (decidido en el paso 1): `set_speedhack(100)` solo con `speedup` y render; sin render,
+  `speedup` solo activa el bucle de `state_updates` y el reloj queda a 1x.
 - Quitarlo de ejemplos y docs: `examples/benchmark_performance.py`, `train_get_to_exit.py`,
   `evaluate_model.py`, `record_video.py` (`speedup=False` "real-time looks better" ya no tiene
   sentido: el vídeo va a fps fijos), `manual_control.py` (se queda con `speedup=False`),
