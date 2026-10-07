@@ -176,7 +176,20 @@ Criterio: anotado en este plan (sección "Estado actual") y en `docs/architectur
 devuelve hoy `render()` respecto al estado (mismo, anterior u otro) y en qué callback puede el mod
 mandar el estado para que la imagen corresponda. Sin cambios en el código del repo.
 
-## 5. `"rgb_array"`: dibujar solo el último frame del paso, y que sea el del estado  ·  pending
+## 5. `"rgb_array"`: dibujar solo el último frame del paso, y que sea el del estado  ·  done [2026-10-07 21:15]
+Resultado: con la sonda de color sobre el mod del repo, imagen = estado en todos los pasos y resets
+(GPU y CPU; k=1 y 6; 160x90, 320x180, 1280x720; 1.500 pasos con ~20 resets y muertes; 4 instancias a
+la vez, 500 pasos cada una). Para dibujar solo el último frame se eligió `update_state()` k-1 veces al
+empezar el comando (desde `PRE_GAME_LOOP`) y el frame k real: un dibujado y un `Present` por paso, y
+así el contador de la capa sigue coincidiendo con `drawn`. ms por paso + `render()`, antes → ahora:
+GPU 160x90 2,1 → 1,5; 640x360 2,7 → 1,7; 1280x720 → 2,3–2,6; CPU 160x90 8,7 → 4,1; 640x360 13,1 → 5,9;
+1280x720 → 10,9. Sin render igual que antes (A/B intercalado, dentro del ruido: 1.470–1.610 pasos/s).
+El `return true` de la espera va en el mismo callback de `PRE_UPDATE` que la entrada (uno menos por
+frame de lógica). Tests: `test_frames.py` (unitarios del fichero y de `render()`), `test_docker_capture`,
+y de integración `test_render_does_not_change_the_game` (200 pasos con y sin render, estados
+idénticos) y `test_render_returns_the_state_frame`. Scripts en
+`~/Desktop/tmp/spelunky/render-bench/step5/` (`vcheck.py`, `perf.py`, `probe_repo` = mod + sonda).
+`launcher="wine"` sigue con mss (BACKLOG).
 Diseño (decidido tras el paso 4): la imagen se coge con una **capa de Vulkan**, no del Xvfb. El mod no
 puede saber cuándo el frame está en pantalla (el `Present` de DXVK va en otro hilo y la API de
 Playlunky no tiene callback tras él ni lectura del framebuffer); descartados dibujar dos veces (sucio,

@@ -39,7 +39,7 @@ function M.release()
     agent_input = nil
 end
 
--- ON.PRE_UPDATE. The agent's input, written before every logic frame (also the ones run by
+-- From ON.PRE_UPDATE (session.on_pre_update). The agent's input, written before every logic frame (also the ones run by
 -- update_state()). steal_input/send_input used to do this, but overlunky deprecates them as
 -- crash-prone, and the input was silently ignored in ~40% of episodes (the player never moved).
 function M.apply()

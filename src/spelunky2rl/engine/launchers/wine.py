@@ -140,7 +140,8 @@ class WineLauncher(Launcher):
             self._slot_lock.close()
         self._game = self._launcher = self._xvfb = self._instance_dir = self._slot_lock = None
 
-    def frame_source(self) -> FrameSource:
+    def frame_source(self, timeout: float) -> FrameSource:
+        # the capture layer is only in the Docker image: the latest frame on screen, maybe an older one
         from ..frames.x11 import X11FrameSource
 
         return X11FrameSource(self.display)

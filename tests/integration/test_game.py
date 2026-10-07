@@ -4,6 +4,7 @@ SPELUNKY2RL_LAUNCHER picks the launcher (default: docker on Linux).
 """
 
 import math
+import os
 import subprocess
 import time
 
@@ -25,6 +26,24 @@ def running_containers():
 def own_containers(envs):
     names = {env.launcher.container for env in envs if getattr(env.launcher, "container", None)}
     return names & set(running_containers())
+
+
+def first_difference(a, b, path="state"):
+    if isinstance(a, dict):
+        for key in a.keys() | b.keys():
+            if key not in a or key not in b:
+                return f"{path}.{key} missing on one side"
+            difference = first_difference(a[key], b[key], f"{path}.{key}")
+            if difference:
+                return difference
+    elif not np.array_equal(np.asarray(a), np.asarray(b)):
+        return f"{path}: {a!r} != {b!r}"
+
+
+def needs_capture():
+    """render() with the Wine launcher grabs the screen with mss; Docker reads the capture layer."""
+    if os.environ.get("SPELUNKY2RL_LAUNCHER") == "wine":
+        needs_capture()
 
 
 def test_episode_and_cleanup():
@@ -93,17 +112,6 @@ def test_state_updates_do_not_change_the_game(monkeypatch):
             env.step(action)
             states.append(env.last_gamestate)
         return states
-
-    def first_difference(a, b, path="state"):
-        if isinstance(a, dict):
-            for key in a.keys() | b.keys():
-                if key not in a or key not in b:
-                    return f"{path}.{key} missing on one side"
-                difference = first_difference(a[key], b[key], f"{path}.{key}")
-                if difference:
-                    return difference
-        elif not np.array_equal(np.asarray(a), np.asarray(b)):
-            return f"{path}: {a!r} != {b!r}"
 
     try:
         engine_value = core.STATE_UPDATES
@@ -241,7 +249,7 @@ def test_parallel_envs(n):
 
 
 def test_render_returns_game_frames():
-    pytest.importorskip("mss")
+    needs_capture()
     env = GetToExit(render_enabled=True, god_mode=True)
     try:
         env.reset(seed=3)
@@ -257,7 +265,7 @@ def test_render_returns_game_frames():
 
 def test_render_resolution():
     """The game fills a screen of any 16:9 size, with no black bars."""
-    pytest.importorskip("mss")
+    needs_capture()
     env = GetToExit(render_enabled=True, render_resolution=(320, 180), god_mode=True)
     try:
         env.reset(seed=3)
@@ -266,5 +274,54 @@ def test_render_resolution():
         frame = env.render()
         assert frame.shape == (180, 320, 3)
         assert frame[:8].mean() > 20 and frame[-8:].mean() > 20
+    finally:
+        env.close()
+
+
+def test_render_does_not_change_the_game():
+    """With render the mod runs all frames of a step but the last with update_state() and answers
+    after drawing; the game must be the same as without render."""
+    actions = np.random.default_rng(1).integers(0, DefaultEnv.action_space.nvec, size=(200, 8))
+
+    def trajectory(**kwargs):
+        env = DefaultEnv(god_mode=True, **kwargs)
+        try:
+            states = [env.reset(seed=3) and env.last_gamestate]
+            for action in actions:
+                env.step(action)
+                states.append(env.last_gamestate)
+            return states
+        finally:
+            env.close()
+
+    needs_capture()
+    plain, rendered = trajectory(), trajectory(render_enabled=True, render_resolution=(160, 90))
+    for step, (a, b) in enumerate(zip(plain, rendered)):
+        difference = first_difference(a, b)
+        assert difference is None, f"step {step}: {difference}"
+
+
+def test_render_returns_the_state_frame():
+    """The image is the state's: it changes with every step, stays the same until the next one, and
+    after a reset it is the new level's."""
+    needs_capture()
+    env = GetToExit(render_enabled=True, render_resolution=(320, 180), god_mode=True)
+    try:
+        env.reset(seed=3)
+        first = env.render()
+        frames = [first]
+        for _ in range(5):
+            env.step([2, 1, 0])
+            frames.append(env.render())
+            assert np.array_equal(frames[-1], env.render())
+        for before, after in zip(frames, frames[1:]):
+            assert not np.array_equal(before, after)
+        # the same level again: not the same pixels (animations), but far closer than another level's
+        env.reset(seed=5)
+        other = env.render()
+        env.reset(seed=3)
+        again = env.render()
+        distance = lambda a, b: np.abs(a.astype(int) - b).mean()
+        assert distance(again, first) < distance(again, other) / 4
     finally:
         env.close()

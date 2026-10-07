@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import threading
 from pathlib import Path
 from typing import List, Optional
@@ -16,6 +17,7 @@ from .base import Launcher, PlaylunkyCache, cache_root, check_game_dir, game_ver
 
 DEFAULT_IMAGE = f"ghcr.io/vicbentu/spelunky2rl-game:{__version__}"
 RENDERERS = ("auto", "gpu", "cpu")
+CAPTURE_FILE = "/capture/frame"  # in the container; the Vulkan layer writes each frame there
 
 
 @functools.lru_cache(maxsize=None)
@@ -83,6 +85,7 @@ class DockerLauncher(Launcher):
         self.use_gpu = self._resolve_gpu()
         self.container = None
         self.display = None
+        self.capture_dir = None
         self._starts = 0
         self._process = None
         self._output = collections.deque(maxlen=50)
@@ -108,6 +111,9 @@ class DockerLauncher(Launcher):
             cmd += ["--gpus", "all", "-e", "NVIDIA_DRIVER_CAPABILITIES=all"]
         if self.dev_mod is not None:
             cmd += ["-v", f"{self.dev_mod}:/opt/mod/lua:ro"]
+        if self.capture_dir is not None:
+            cmd += ["-v", f"{self.capture_dir}:{os.path.dirname(CAPTURE_FILE)}",
+                    "-e", "SPELUNKY2RL_CAPTURE_LAYER=1", "-e", f"SPELUNKY2RL_CAPTURE={CAPTURE_FILE}"]
         return cmd + self.extra_args + [self.image]
 
     def starting(self, timeout: float):
@@ -120,6 +126,10 @@ class DockerLauncher(Launcher):
         self.container = f"spelunky2rl-{port}" + (f"-{self._starts}" if self._starts > 1 else "")
         self.display = f":{port}"
         self._output.clear()
+        if self.capture:
+            # in memory (/dev/shm) where there is one: the layer writes a whole frame per present
+            self.capture_dir = tempfile.mkdtemp(prefix="spelunky2rl-capture-",
+                                                dir="/dev/shm" if os.path.isdir("/dev/shm") else None)
         self._process = subprocess.Popen(self.command(port, self.container), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                          stdin=subprocess.DEVNULL, text=True, errors="replace")
         threading.Thread(target=self._drain, args=(self._process,), daemon=True).start()
@@ -132,18 +142,20 @@ class DockerLauncher(Launcher):
         return self._process is not None and self._process.poll() is None
 
     def stop(self) -> None:
-        if self._process is None:
-            return
-        with contextlib.suppress(OSError, subprocess.TimeoutExpired):
-            subprocess.run([self.docker, "kill", self.container], capture_output=True, timeout=30)
-        with contextlib.suppress(subprocess.TimeoutExpired):
-            self._process.wait(timeout=30)
-        self._process = None
+        if self._process is not None:
+            with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+                subprocess.run([self.docker, "kill", self.container], capture_output=True, timeout=30)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                self._process.wait(timeout=30)
+            self._process = None
+        if self.capture_dir is not None:
+            shutil.rmtree(self.capture_dir, ignore_errors=True)
+            self.capture_dir = None
 
-    def frame_source(self) -> FrameSource:
-        from ..frames.x11 import X11FrameSource
+    def frame_source(self, timeout: float) -> FrameSource:
+        from ..frames.vulkan import VulkanFrameSource
 
-        return X11FrameSource(self.display)
+        return VulkanFrameSource(os.path.join(self.capture_dir, os.path.basename(CAPTURE_FILE)), timeout)
 
     def diagnostics(self) -> str:
         return "\n".join(self._output)

@@ -127,7 +127,7 @@ class FakeLua(threading.Thread):
                     self.send_line(reply)
                     continue
                 state = pack_state(layout, reply)
-                header = {"state": len(state)}
+                header = {"state": len(state), "drawn": self.steps}
                 if message["command"] == "reset":
                     header["layout"] = layout
                 self.send_line(header, state)

@@ -52,7 +52,7 @@ def test_headless_defaults_reach_lua(make_env):
 
 @pytest.mark.parametrize("kwargs, state_updates, speedup", [
     ({}, STATE_UPDATES, True),
-    ({"render_enabled": True}, 0, True),  # each frame is drawn: no logic-only frames in between
+    ({"render_enabled": True}, 0, True),  # the mod runs the logic-only frames of each step itself
     ({"speedup": False}, 0, False),
 ])
 def test_the_engine_picks_state_updates(make_env, kwargs, state_updates, speedup):

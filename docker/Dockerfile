@@ -8,6 +8,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 COPY docker/versions.env docker/fetch_assets.sh /tmp/
 RUN /tmp/fetch_assets.sh /opt/assets
 
+# The Vulkan layer that hands render() its frames (docker/vklayer/capture.c)
+FROM ubuntu:26.04 AS vklayer
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev libvulkan-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY docker/vklayer/capture.c /src/
+RUN gcc -shared -fPIC -O2 -fvisibility=hidden -Wall -Werror -o /src/libspelunky2rl_capture.so /src/capture.c
+
 FROM ubuntu:26.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -30,6 +37,9 @@ RUN (Xvfb :1 -nolisten tcp & sleep 1; DISPLAY=:1 wineboot -i; wineserver -w) \
 
 # The NVIDIA container runtime injects the driver libraries but not the Vulkan ICD manifest
 COPY docker/config/nvidia_icd.json /usr/share/vulkan/icd.d/nvidia_icd.json
+# Implicit layer, off unless SPELUNKY2RL_CAPTURE_LAYER=1 (set by DockerLauncher with render)
+COPY --from=vklayer /src/libspelunky2rl_capture.so /opt/vklayer/
+COPY docker/vklayer/capture.json /usr/share/vulkan/implicit_layer.d/spelunky2rl_capture.json
 COPY src/spelunky2rl/engine/launchers/config/ /opt/assets/config/
 COPY src/spelunky2rl/mod/lua/ /opt/mod/lua/
 COPY docker/entrypoint.sh /entrypoint.sh

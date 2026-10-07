@@ -122,6 +122,8 @@ class SpelunkyRLEngine(gym.Env):
         self.render_resolution = check_render_resolution(render_resolution)
         self.launcher = make_launcher(launcher, self.game_dir, renderer=renderer, options=launcher_options)
         self.launcher.screen = self.render_resolution if self.render_enabled else HIDDEN_SCREEN
+        self.launcher.capture = self.render_enabled
+        self._drawn: Optional[int] = None  # frames drawn when the last state was sent
         self._game_init()
 
 
@@ -143,6 +145,7 @@ class SpelunkyRLEngine(gym.Env):
         self._game_reset(seed=seed, **reset_options)
 
         header, data = self.server.receive()
+        self._drawn = header["drawn"]
         self.layout = StateLayout(header["layout"])
         gamestate = self.layout.decode(data)
         self.last_gamestate = gamestate
@@ -163,7 +166,8 @@ class SpelunkyRLEngine(gym.Env):
             "frames": self.frames_per_step,
         })
 
-        _, data = self.server.receive()
+        header, data = self.server.receive()
+        self._drawn = header["drawn"]
         gamestate = self.layout.decode(data)
 
         info = {
@@ -221,7 +225,7 @@ class SpelunkyRLEngine(gym.Env):
         self.mod_version = hello.get("mod")
 
         if self.render_enabled:
-            self.frame_source = self.launcher.frame_source()
+            self.frame_source = self.launcher.frame_source(self.step_timeout)
 
     def _launch_and_accept(self, port: int) -> Connection:
         deadline = time.monotonic() + self.startup_timeout
@@ -270,7 +274,8 @@ class SpelunkyRLEngine(gym.Env):
         message = {
             "command": "reset",
             "speedup": speedup,
-            # extra logic frames only when nobody reads the frames: with render each frame is drawn
+            # extra logic frames per real frame only without render: with it the mod runs all of a
+            # step but the last frame itself, and the game draws that one
             "state_updates": STATE_UPDATES if speedup and not self.render_enabled else 0,
             "seed": seed,
             "ent_types_to_destroy": list(ent_types_to_destroy),
@@ -309,7 +314,8 @@ class SpelunkyRLEngine(gym.Env):
         if self.frame_source is None:
             raise RuntimeError("Use render_enabled=True on init to be able to record replays")
 
-        return self.frame_source.get_frame()
+        # the frame of the last state: with the Docker launcher the one drawn right before it was sent
+        return self.frame_source.get_frame(self._drawn)
 
 
 

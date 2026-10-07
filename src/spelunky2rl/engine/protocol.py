@@ -4,8 +4,11 @@ Python listens on 127.0.0.1 and the Lua mod connects. Python sends one JSON obje
 answers with a JSON header line, followed by `state` bytes when the header has that key:
 
 - first, unasked: ``{"hello": {"protocol": N, "mod": "x.y.z"}}``
-- to `reset`: ``{"state": n, "layout": [...]}`` and the game state, packed as `layout` says
-- to `step`: ``{"state": n}`` and the game state, with the layout of the last reset
+- to `reset`: ``{"state": n, "layout": [...], "drawn": d}`` and the game state, packed as `layout` says
+- to `step`: ``{"state": n, "drawn": d}`` and the game state, with the layout of the last reset
+
+`drawn` counts the frames the game has drawn; with render, the state's own frame is the last of
+them (the Vulkan layer in docker/vklayer/ counts the frames it copies the same way).
 - on a Lua error, at any time: ``{"error": "..."}``
 
 `close` gets no answer. StateLayout reads the game state.
@@ -20,7 +23,7 @@ import numpy as np
 from ..version import __version__
 
 # Bump when a message changes shape; keep in sync with PROTOCOL_VERSION in mod/lua/spelunky2rl/protocol.lua
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 
 
 class ProtocolError(RuntimeError):

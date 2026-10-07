@@ -55,6 +55,14 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   `package.loadlib` y la ruta de `script_path.lua`. Quitarla y pasar
   `tests/integration`. Solo probado bajo Wine en Docker; no la quité en la reorganización porque no
   puedo probarlo en Windows nativo.
+- [2026-10-07 21:14 @1ec06d0] From "Velocidad y render", paso 5: con `launcher="wine"` `render()` sigue capturando
+  el Xvfb con mss (`X11FrameSource`), así que puede devolver un frame 1–3 frames anterior al estado; la
+  capa de Vulkan (`docker/vklayer/capture.c`) solo está en la imagen de Docker. Para llevarla:
+  `scripts/setup_wine.sh` la compila (gcc + cabeceras de Vulkan) en el wine home junto a un
+  `capture.json` con la ruta absoluta del `.so`; `WineLauncher` pone `VK_ADD_LAYER_PATH`,
+  `SPELUNKY2RL_CAPTURE_LAYER=1` y `SPELUNKY2RL_CAPTURE` (un directorio en `/dev/shm` por instancia,
+  borrado en `stop()`) con `capture`, y `frame_source` devuelve `VulkanFrameSource`, como
+  `DockerLauncher`. El mod ya lo hace todo.
 
 ## Ideas
 

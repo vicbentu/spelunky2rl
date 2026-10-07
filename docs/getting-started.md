@@ -31,7 +31,7 @@ or pass `game_dir="..."` when creating an environment.
 2. Install the package (Python 3.9+, in a virtual environment):
 
    ```bash
-   pip install spelunky2rl    # add [render] for render()
+   pip install spelunky2rl    # with launcher="wine", add [render] for render()
    ```
 
 3. Get the game image. Either pull it, or build it from a clone of the repo (a few minutes):
@@ -167,14 +167,19 @@ per-step exchange with Python is. One instance, `get_to_exit`, Ryzen 9 7900X and
 1,600 steps/s with either renderer. With `speedup=False` the game runs in real time, 10 steps/s with
 `frames_per_step=6`.
 
-With `render_enabled=True` every frame is drawn, which costs most of the step. The game draws at
-`render_resolution`, so a smaller one is faster. Measured calling `render()` every step:
+With `render_enabled=True` the last frame of each step is drawn (the one `render()` returns, the
+state's own), which costs most of the step. The game draws at `render_resolution`, so a smaller one
+is faster. Measured calling `render()` every step:
 
 | `render_resolution` | GPU renderer | CPU renderer (lavapipe) |
 |---|---|---|
-| 320x180 | 440 steps/s | 107 steps/s |
-| 640x360 | 370 steps/s | 77 steps/s |
-| 1280x720 | 164 steps/s | 39 steps/s |
+| 160x90 | 620–670 steps/s | 240 steps/s |
+| 320x180 | 580–650 steps/s | 230 steps/s |
+| 640x360 | 590 steps/s | 170 steps/s |
+| 1280x720 | 380–430 steps/s | 92 steps/s |
+
+With `launcher="wine"` `render()` grabs the screen instead, which may still show a frame from before
+the state.
 
 With `render_enabled=False` the screen size still matters (with lavapipe, 640x360 runs ~20 % slower
 than 160x90), so the game runs on a 160x90 screen whatever `render_resolution` says.

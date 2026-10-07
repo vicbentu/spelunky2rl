@@ -5,9 +5,12 @@
 #                             shares X's abstract sockets between containers)
 #           RENDERER          "cpu" forces lavapipe; anything else lets Vulkan pick (GPU if passed in)
 #           SCREEN            WxH of the Xvfb screen, which the game fills (default 640x360)
+#           SPELUNKY2RL_CAPTURE_LAYER=1, SPELUNKY2RL_CAPTURE=<file>
+#                             optional, the Vulkan layer copies every presented frame to <file>
 #   mounts: /game (ro)        the user's Spelunky 2 folder
 #           /cache (rw)       optional, Playlunky's converted-assets cache shared between instances
 #           /opt/mod/lua      optional dev mount over the bundled Lua mod
+#           /capture (rw)     optional, where SPELUNKY2RL_CAPTURE points (with render)
 set -euo pipefail
 : "${PORT:?PORT is required}"
 DISPLAYNUM="${DISPLAYNUM:-99}"

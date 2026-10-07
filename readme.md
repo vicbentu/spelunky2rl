@@ -23,7 +23,7 @@ The game runs headless in Docker on Linux, one container per environment (Window
 Either way you need your own copy of Spelunky 2 (Steam is only needed to download it).
 
 ```bash
-pip install spelunky2rl # add [render] for render()
+pip install spelunky2rl
 spelunky2rl pull      # Linux: the game runtime image (Wine, Playlunky; not the game), or build it
 spelunky2rl doctor    # checks Docker, GPU, the image and your game folder
 ```
