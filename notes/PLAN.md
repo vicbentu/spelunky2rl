@@ -160,9 +160,43 @@ son consecutivos y el último es el del estado. `RecordVideo` sobre el entorno e
 60 FPS con 6 frames por paso. Tests unitarios (con `FakeLauncher`/`FakeLua`) del intercambio
 `frame`/`next` y de la lista; test de integración que graba unos pasos. Suite completa en verde.
 
-## 7. Docs y cierre  ·  pending
-`docs/getting-started.md` (parámetros, sección de velocidad con la tabla de casos, grabación),
-`docs/architecture.md` (mecanismo de velocidad, render, protocolo), `docs/environments.md`, y una nota
-para la release con los cambios incompatibles.
-Criterio: `grep -rn "state_updates\|render_enabled=True.*speedup=False" docs examples` sin usos
-obsoletos; la tabla de "Objetivo" está en `docs/getting-started.md`; suite completa en verde.
+## 7. Documentación para usuarios  ·  pending
+Hoy quien usa el entorno no tiene una referencia completa: `readme.md` (también la página de PyPI) no
+menciona opciones; `docs/getting-started.md` da los parámetros de `__init__` como un bloque de código
+comentado y no explica `render_mode`; el docstring de `__init__` remite para las opciones de reset a
+`_game_reset`, privado y sin docstring, así que `help(env)` y el IDE no muestran `hp`, `god_mode`, etc.
+Los pasos 3, 5 y 6 ya corrigen lo que dejan obsoleto; este paso deja la referencia completa.
+
+- `docs/getting-started.md`, la referencia para usuarios, en tres secciones:
+  1. **Parámetros de creación**: tabla (nombre, tipo, defecto, qué hace) en vez del bloque comentado:
+     `game_dir`, `frames_per_step`, `render_mode` (`None` / `"rgb_array"` / `"rgb_array_list"`, y
+     `render_enabled` como alias), `render_resolution`, `launcher`, `renderer`, `launcher_options`,
+     `step_timeout`, `startup_timeout`, `max_launch_attempts`.
+  2. **Opciones de reset**: la tabla actual, sin `state_updates` y con `speedup` en `True`; que se
+     pueden dar en `__init__` (por defecto de todos los episodios), en `reset(**kwargs)` o en
+     `reset(options=...)`.
+  3. **Velocidad e imágenes** (nueva, sustituye a "Performance Optimization"): la tabla de casos de
+     "Objetivo" (entrenar sin imágenes, con imágenes, grabar, mirar en vivo) con los pasos/s medidos
+     por caso (GPU y CPU, una instancia y varias), un ejemplo de código de cada uno (grabar con
+     `gymnasium.wrappers.RecordVideo`), y qué cuesta la resolución y la VRAM (~1,75 GiB por instancia).
+- Docstrings: `__init__` con cada parámetro en una línea, apuntando a la guía para el detalle;
+  `reset()` con la lista de opciones de reset y su defecto (en vez de remitir a `_game_reset`).
+- `readme.md`: en "Basic Usage", dos o tres líneas con los casos típicos (`render_mode="rgb_array"`
+  para entrenar con imágenes, `"rgb_array_list"` para grabar) y el enlace a la tabla de la guía.
+- `docs/environments.md`: los ejemplos con `state_updates` / `speedup` al día y, donde explica
+  `render_mode`, enlace a la guía en vez de repetirlo.
+- `docs/architecture.md` (para quien toca el código, no para usuarios): mecanismo de velocidad
+  (cómo elige el motor N, speedhack), en qué callback se manda el estado y por qué (paso 4), el modo
+  de dibujar solo el último frame, el intercambio `frame`/`next` y `PROTOCOL_VERSION`.
+- `examples/README.md` y la lista de ejemplos de `readme.md` al día con `record_video.py`.
+- Nota para la release (en el cuerpo del commit que cierra el paso, para copiarla a la GitHub
+  Release): `speedup` por defecto `True`, `state_updates` eliminado, `render_mode="rgb_array_list"`,
+  y que la imagen de `render()` ahora corresponde al estado (si el paso 5 lo cambió).
+Criterio:
+- Test unitario nuevo que comprueba que la guía no se desincroniza del código: cada parámetro de
+  `SpelunkyRLEngine.__init__` y cada opción de reset (la firma de `_game_reset` menos `seed`)
+  aparece en su tabla de `docs/getting-started.md`, y la tabla no lista ninguno que no exista.
+- `help(SpelunkyEnv.reset)` muestra todas las opciones de reset.
+- `grep -rn "state_updates" docs examples readme.md src/spelunky2rl/envs` no encuentra usos de
+  usuario; `grep -rn "speedup=False" docs examples` solo en `manual_control`.
+- Suite unitaria e integración en verde.
