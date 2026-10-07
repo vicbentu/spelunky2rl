@@ -585,6 +585,30 @@ frame = env.render()  # Returns numpy array
 - `X11FrameSource` (Docker, Wine): grabs the instance's Xvfb display with `mss`. With host networking
   the container's X server is reachable from the host as display `:<port>`.
 
+**Which frame `render()` returns.** One turn of the game's main loop runs these callbacks in this
+order (measured with Playlunky 0.19.0):
+
+```
+PRE_GAME_LOOP → PRE_UPDATE → (logic frame) → POST_UPDATE → GAMEFRAME → FRAME → POST_GAME_LOOP
+  → RENDER_PRE_GAME → RENDER_POST_GAME → RENDER_PRE_HUD → RENDER_POST_HUD → GUIFRAME
+  → (Present) → PRE_PROCESS_INPUT → POST_PROCESS_INPUT → next PRE_GAME_LOOP
+```
+
+The mod answers in `POST_UPDATE` and waits there for the next command, so the frame of the state
+is drawn only after the next command arrives: `render()` returns an older frame. With the 100x
+speedhack the game also runs some turns without drawing (it catches up on its clock), so the image
+is 1 to 3 logic frames older than the state (with `frames_per_step=6`, almost always 1; with 1, a
+mix of 1, 2 and 3). Measured by drawing `state.time_level` as a colour in a corner in
+`RENDER_POST_HUD` and comparing it with `time` in the state.
+
+To make the image match the state, the mod has to answer after the frame is drawn, in the next
+`PRE_GAME_LOOP`, and keep the state from changing until then: return `true` from `PRE_UPDATE`
+to skip the logic frames of the turns that come before (the game skips drawing some turns). That
+alone is not enough: `Present` hands the frame to DXVK, which shows it on the X server a few
+milliseconds later (1 ms with the GPU, 3 ms with lavapipe at 320x180). Answering after a second
+drawing of the same frame (two turns with the update skipped) gave the state's frame in every step
+with both renderers, at +0.4 ms per step with the GPU and +3 ms with the CPU at 160x90.
+
 ## Error Handling
 
 ### Lua Errors

@@ -27,8 +27,9 @@
     pantalla, por eso sin render la pantalla es de 160x90 (`HIDDEN_SCREEN`, commit 51ba379).
 - El estado se manda en `POST_UPDATE` del último frame del paso y el mod espera ahí el siguiente
   comando (`protocol.receive()` en `update()`). El juego dibuja y presenta ese frame **después** de
-  `POST_UPDATE`, o sea después de que llegue el siguiente comando: es probable que `render()` devuelva
-  hoy la imagen del frame anterior al estado (sin comprobar; paso 4).
+  `POST_UPDATE`, o sea después de que llegue el siguiente comando: `render()` devuelve hoy un frame
+  1–3 frames de lógica anterior al estado (medido en el paso 4; detalle en `docs/architecture.md`,
+  "Which frame `render()` returns").
 - `render()` captura el Xvfb desde Python con mss (`engine/frames/x11.py`): 0,05 ms a 160x90,
   0,6 ms a 640x360. No es el cuello de botella; dibujar sí.
 
@@ -142,7 +143,27 @@ Verified with: `.venv/bin/python -m pytest tests/unit -q` y
 `SPELUNKY2RL_GAME_DIR=~/Desktop/tmp/spelunky2-clean .venv/bin/python -m pytest tests/integration -q`
 (con la imagen local reconstruida si cambió el mod).
 
-## 4. ¿Qué frame hay en pantalla cuando llega el estado?  ·  pending
+## 4. ¿Qué frame hay en pantalla cuando llega el estado?  ·  done [2026-10-07 15:16]
+Resultado (`render_resolution` 320x180, 50 pasos; imagen − estado en frames de lógica):
+
+| Mod | k | GPU, sin espera | CPU, sin espera | con 20 ms antes de `render()` |
+|---|---|---|---|---|
+| actual | 1 | −1/−2/−3 | | −1/−2 |
+| actual | 6 | −1 (49), −3 (1) | | −2 |
+| responde en `PRE_GAME_LOOP` tras un dibujado | 6 | 0 (43), −2 (7) | −2 (50) | 0 (50; ya con 1 ms en GPU, 3 ms en CPU) |
+| ídem tras dos dibujados | 6 | 0 (50) | 0 (50) | |
+
+Orden de callbacks por vuelta: `PRE_GAME_LOOP → PRE_UPDATE → POST_UPDATE → GAMEFRAME → FRAME →
+POST_GAME_LOOP → RENDER_* → GUIFRAME → (Present) → PRE_PROCESS_INPUT → POST_PROCESS_INPUT`. Con el
+speedhack el juego se salta el dibujado en algunas vueltas. Para que la imagen sea la del estado el
+mod tiene que: aplazar la respuesta a `PRE_GAME_LOOP`, saltarse con `return true` en `PRE_UPDATE` las
+actualizaciones mientras espera (probado: funciona) y además esperar a que DXVK lleve el frame al X
+server, que es asíncrono (1–3 ms). Paso con render a 160x90, ms: mod actual GPU 2,26 / CPU 8,77;
+un dibujado 2,15 / 8,77; dos dibujados 2,53 / 11,73. Sondas: `probe` (color en
+`RENDER_POST_HUD` y log de callbacks en `/cache/probe_order.log`), `probe2` (un dibujado),
+`probe3` (dos), copiadas a `~/Desktop/tmp/spelunky/render-bench/` con `probe.py <k>` y
+`probe_delay.py <k> <espera s> <renderer>`. Colores: el juego toma el color como lineal y escribe
+sRGB (16→71, 48→120, …, 240→248; tabla en `probe.py`).
 Sonda en una copia del mod (scratchpad, `SPELUNKY2RL_DEV_MOD`): en `ON.RENDER_POST_HUD` dibujar un
 rectángulo en una esquina cuyo color codifique el contador de frames de lógica (p. ej.
 `state.time_level` o un contador propio, en tres canales), y mandar ese mismo contador en el estado.
