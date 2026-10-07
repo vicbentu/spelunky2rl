@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import spelunky2rl
+from spelunky2rl.engine.core import STATE_UPDATES
 from spelunky2rl.envs.default_environment import SpelunkyEnv as DefaultEnv
 from spelunky2rl.envs.get_to_exit import SpelunkyEnv as GetToExit
 
@@ -47,6 +48,29 @@ def test_headless_defaults_reach_lua(make_env):
     assert message["time_ghost"] is True
     env.reset(seed=0, time_ghost=False)
     assert env.fake_lua.messages[-1]["time_ghost"] is False
+
+
+@pytest.mark.parametrize("kwargs, state_updates, speedup", [
+    ({}, STATE_UPDATES, True),
+    ({"render_enabled": True}, 0, True),  # each frame is drawn: no logic-only frames in between
+    ({"speedup": False}, 0, False),
+])
+def test_the_engine_picks_state_updates(make_env, kwargs, state_updates, speedup):
+    env = make_env(DefaultEnv, **kwargs)
+    env.reset(seed=0)
+    message = env.fake_lua.messages[-1]
+    assert (message["state_updates"], message["speedup"]) == (state_updates, speedup)
+
+
+def test_state_updates_is_gone(make_env):
+    with pytest.raises(TypeError, match="state_updates was removed"):
+        make_env(DefaultEnv, state_updates=200)
+    env = make_env(DefaultEnv)
+    with pytest.raises(TypeError, match="state_updates was removed"):
+        env.reset(seed=0, state_updates=200)
+    with pytest.raises(TypeError, match="state_updates was removed"):
+        env.reset(seed=0, options={"state_updates": 200})
+    assert not env.fake_lua.messages
 
 
 def test_unknown_reset_option_is_rejected(make_env):

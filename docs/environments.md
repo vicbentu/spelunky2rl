@@ -20,7 +20,7 @@ registered with Gymnasium once `spelunky2rl` is imported:
 import gymnasium as gym
 import spelunky2rl  # registers the ids
 
-env = gym.make("spelunky2rl/GetToExit-v0", speedup=True, state_updates=200)
+env = gym.make("spelunky2rl/GetToExit-v0")
 # also: spelunky2rl/Default-v0, Dummy-v0, GoldGrabber-v0, EnemyKiller-v0
 # render_mode="rgb_array" enables render()
 ```
@@ -69,10 +69,7 @@ Goal-reaching task where the agent navigates to the level exit as quickly as pos
 ```python
 from spelunky2rl.envs.get_to_exit import SpelunkyEnv
 
-env = SpelunkyEnv(
-    speedup=True,
-    state_updates=200,
-)
+env = SpelunkyEnv()
 ```
 
 ### Gold Grabber
@@ -451,9 +448,7 @@ class GoldRushEnv(SpelunkyRLEngine):
         }
 
 # Use it
-env = GoldRushEnv(
-    speedup=True,
-)
+env = GoldRushEnv()
 ```
 
 ## Advanced Topics

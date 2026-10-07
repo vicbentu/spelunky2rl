@@ -20,6 +20,11 @@ HELLO_TIMEOUT = 15.0  # the mod says hello right after connecting
 # 640x360 -> 160x90 is ~20 % more steps/s); at 16x9 the game does not start
 HIDDEN_SCREEN = (160, 90)
 MIN_RENDER_RESOLUTION = (64, 36)
+# Extra logic frames the mod runs per real frame with speedup and no render. A step is the same game
+# time with any value; past ~200 the exchange with Python (~0.6 ms per step) is the limit
+STATE_UPDATES = 200
+REMOVED_STATE_UPDATES = ("state_updates was removed: the engine sets it (speedup=True, the default, "
+                         "already runs as fast as the machine allows). Drop the argument.")
 
 
 def check_render_resolution(resolution) -> Tuple[int, int]:
@@ -87,6 +92,8 @@ class SpelunkyRLEngine(gym.Env):
 
         super().__init__()
 
+        if "state_updates" in kwargs:
+            raise TypeError(REMOVED_STATE_UPDATES)
         known = set(inspect.signature(self._game_reset).parameters) - {"seed"}
         unknown = sorted(set(kwargs) - known)
         if unknown:
@@ -130,7 +137,10 @@ class SpelunkyRLEngine(gym.Env):
         (see _game_reset); an unknown one is a TypeError."""
 
         super().reset(seed=seed)
-        self._game_reset(seed=seed, **(self.reset_options | (options or {}) | kwargs))
+        reset_options = self.reset_options | (options or {}) | kwargs
+        if "state_updates" in reset_options:
+            raise TypeError(REMOVED_STATE_UPDATES)
+        self._game_reset(seed=seed, **reset_options)
 
         header, data = self.server.receive()
         self.layout = StateLayout(header["layout"])
@@ -239,8 +249,7 @@ class SpelunkyRLEngine(gym.Env):
     def _game_reset(
             self,
             seed:int = None,
-            speedup: bool = False,
-            state_updates: int = 0,
+            speedup: bool = True,
 
             ent_types_to_destroy = (),
             manual_control: bool = False,
@@ -261,7 +270,8 @@ class SpelunkyRLEngine(gym.Env):
         message = {
             "command": "reset",
             "speedup": speedup,
-            "state_updates": state_updates,
+            # extra logic frames only when nobody reads the frames: with render each frame is drawn
+            "state_updates": STATE_UPDATES if speedup and not self.render_enabled else 0,
             "seed": seed,
             "ent_types_to_destroy": list(ent_types_to_destroy),
             "fields": self.fields,

@@ -172,8 +172,7 @@ def make_env(index: int):
 
             # Performance settings
             frames_per_step=6,   # 6 frames between actions (~10 actions/sec)
-            speedup=True,        # Run game faster than real-time
-            state_updates=200,   # Extra logic frames per rendered frame: same dynamics, much faster
+            # speedup=True is the default: the game runs as fast as the machine allows
 
             # Training settings
             manual_control=False,  # AI control

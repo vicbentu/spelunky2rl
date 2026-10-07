@@ -170,7 +170,8 @@ is registered only in `main.lua`. `luasocket/` is the vendored socket library.
      is sent.
    - `step` starts by holding the action and is answered `frames` frames later.
    - `close` releases the input, restores the game speed and exits the game. So does a lost connection.
-3. With `speedup`, `update_state()` runs `state_updates` more logic frames. Each of them fires
+3. With `speedup`, `update_state()` runs `state_updates` more logic frames (the engine sends 200
+   without render, 0 with it). Each of them fires
    `ON.POST_UPDATE` again and goes through steps 1 and 2: commands are received and answered inside
    that loop.
 
@@ -226,11 +227,12 @@ def reset(self, seed=None, options=None, **kwargs):
 The `_game_reset()` method sends configuration to Lua:
 
 ```python
-def _game_reset(self, seed, speedup, state_updates, hp, bombs, ...):
+def _game_reset(self, seed, speedup, hp, bombs, ...):
     self._send_dict({
         "command": "reset",
         "speedup": speedup,
-        "state_updates": state_updates,
+        # picked by the engine: STATE_UPDATES (200) with speedup and no render, else 0
+        "state_updates": STATE_UPDATES if speedup and not self.render_enabled else 0,
         "seed": seed,
         "ent_types_to_destroy": ent_types_to_destroy,
         "fields": self.fields,  # data_to_send, resolved by engine/fields.py
@@ -516,35 +518,33 @@ env = SpelunkyEnv(frames_per_step=6)  # Default: 6 frames (~10 actions/sec at 60
 - Lower values → More reactive but slower training
 - Higher values → Faster training but less precise control
 
-### State Updates (Speedup)
+### Speed (`speedup`)
 
-`state_updates` makes each rendered frame carry N extra logic frames:
+`speedup=True` (the default) runs the game as fast as the machine allows; `speedup=False` plays it
+in real time (60 FPS). How the engine does it depends on whether anyone reads the frames:
 
-```python
-env.reset(speedup=True, state_updates=200)
-```
+- **No render**: each real frame carries `state_updates` extra logic frames, which are not drawn.
+  The engine sends `STATE_UPDATES` (200, in `engine/core.py`); users cannot set it. The game clock
+  stays at 1x: with 200 logic frames per real one, the 60 FPS cap is no longer the limit (measured:
+  the same ~1,600 steps/s with and without the speedhack).
+- **Render**: every frame is drawn and captured, so `state_updates` is 0 and the mod sets a 100x
+  speedhack on the game's clock (`set_speedhack(100)` in `control.lua`); without it the game would
+  wait for 60 FPS (10 steps/s with `frames_per_step=6`).
 
-**How it works** (Lua side): in `ON.POST_UPDATE`, after the protocol work, the mod calls
+A step is the same game time with any `state_updates` (each extra frame runs the agent's input and
+counts towards `frames`), which `test_state_updates_do_not_change_the_game` checks.
+
+**How the extra frames work** (Lua side): in `ON.POST_UPDATE`, after the protocol work, the mod calls
 `update_state()` N times. Each call simulates one logic frame and fires `POST_UPDATE` again, which
 runs the protocol for that frame (so steps and replies happen inside the loop); a flag stops those
 nested calls from starting their own loop. Earlier versions recursed instead, N levels deep, which
 is why high values used to crash.
 
-**Limits**: above ~50 the game is no longer the bottleneck; the per-step exchange with Python is.
-Do not combine with `render_enabled=True`: captured frames would skip most of the action.
+**Limits**: past ~200 the game is no longer the bottleneck; the per-step exchange with Python
+(~0.6 ms) is.
 
 With `render_enabled=False` the mod also returns `true` from `ON.RENDER_PRE_GAME` and
-`ON.RENDER_PRE_HUD`, so the level is not drawn at all (+~20 % steps/s without `state_updates`).
-
-### Speedup Flag
-
-`speedup=True` makes the game run faster than real time (a 100x speedhack on the game's clock):
-
-```python
-env.reset(speedup=True)
-```
-
-Allows the game to run as fast as the CPU permits.
+`ON.RENDER_PRE_HUD`, so the real frames are not drawn either, and the screen is 160x90.
 
 ### Data Optimization
 

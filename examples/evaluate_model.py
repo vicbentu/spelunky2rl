@@ -40,7 +40,6 @@ MODEL_PATH = "./models_get_to_exit/final_model.zip"
 NUM_EPISODES = 50      # Number of episodes to evaluate
 NUM_ENVS = 4           # Number of parallel environments
 USE_LSTM = True        # Set to True if model uses RecurrentPPO, False for PPO
-SPEEDUP = True         # Run game faster than real-time
 DETERMINISTIC = True   # Use deterministic actions (no exploration)
 
 
@@ -53,7 +52,6 @@ def make_env(index: int):
             # The game folder comes from SPELUNKY2RL_GAME_DIR (or pass game_dir="...")
 
             frames_per_step=6,
-            speedup=SPEEDUP,
             manual_control=False,
             god_mode=False,
             render_enabled=False  # Set to True to enable video recording

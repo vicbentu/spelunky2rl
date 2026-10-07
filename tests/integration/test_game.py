@@ -11,10 +11,9 @@ import gymnasium as gym
 import numpy as np
 import pytest
 
+from spelunky2rl.engine import core
 from spelunky2rl.envs.default_environment import SpelunkyEnv as DefaultEnv
 from spelunky2rl.envs.get_to_exit import SpelunkyEnv as GetToExit
-
-FAST = {"speedup": True, "state_updates": 50}
 
 
 def running_containers():
@@ -29,7 +28,7 @@ def own_containers(envs):
 
 
 def test_episode_and_cleanup():
-    env = DefaultEnv(**FAST)
+    env = DefaultEnv()
     try:
         assert env.mod_version
         obs, _ = env.reset(seed=3)
@@ -48,7 +47,7 @@ def test_episode_and_cleanup():
 def test_actions_move_the_player_and_are_deterministic():
     """The agent's input used to be ignored in ~40% of episodes (steal_input), which also made
     episodes non-reproducible."""
-    env = GetToExit(**FAST, god_mode=True)
+    env = GetToExit(god_mode=True)
 
     def episode(seed):
         env.reset(seed=seed)
@@ -68,7 +67,7 @@ def test_actions_move_the_player_and_are_deterministic():
 
 
 def test_same_seed_same_level():
-    env = GetToExit(**FAST)
+    env = GetToExit()
     try:
         firsts = []
         for _ in range(2):
@@ -80,14 +79,15 @@ def test_same_seed_same_level():
         env.close()
 
 
-def test_state_updates_do_not_change_the_game():
+def test_state_updates_do_not_change_the_game(monkeypatch):
     """A step is the same game time with any state_updates: the extra frames run the agent's input
     too (ON.PRE_UPDATE) and answer the same frame count, so the engine can pick N on its own."""
-    env = DefaultEnv(speedup=True, god_mode=True)
+    env = DefaultEnv(god_mode=True)
     actions = np.random.default_rng(0).integers(0, env.action_space.nvec, size=(500, len(env.action_space.nvec)))
 
     def trajectory(state_updates):
-        env.reset(seed=3, state_updates=state_updates)
+        monkeypatch.setattr(core, "STATE_UPDATES", state_updates)
+        env.reset(seed=3)
         states = [env.last_gamestate]
         for action in actions:
             env.step(action)
@@ -106,7 +106,8 @@ def test_state_updates_do_not_change_the_game():
             return f"{path}: {a!r} != {b!r}"
 
     try:
-        slow, fast = trajectory(0), trajectory(200)
+        engine_value = core.STATE_UPDATES
+        slow, fast = trajectory(0), trajectory(engine_value)
         xs = [state["basic_info"]["x"] for state in slow]
         assert max(xs) - min(xs) > 0.5, "player did not move"
         for step, (a, b) in enumerate(zip(slow, fast)):
@@ -120,7 +121,7 @@ def test_dist_to_goal_follows_the_player_cell():
     """Between two steps dist_to_goal changes by at most the cells the player moved, with the same
     parity: same cell, same distance; next cell, one more or one less. The distance used to be
     read from the cell above (and often one to the left), where it froze against ceilings."""
-    env = GetToExit(**FAST, god_mode=True)
+    env = GetToExit(god_mode=True)
 
     def cell_and_distance():
         info = env.last_gamestate["basic_info"]
@@ -151,13 +152,13 @@ def test_reset_leaves_nothing_of_the_previous_level():
         env.reset(seed=seed)
         return env.last_gamestate["dist_to_goal"], env.last_gamestate["map_info"]
 
-    env = GetToExit(**FAST, god_mode=True)
+    env = GetToExit(god_mode=True)
     try:
         fresh = first_state(env, 29)
     finally:
         env.close()
 
-    env = GetToExit(**FAST, god_mode=True)
+    env = GetToExit(god_mode=True)
     try:
         env.reset(seed=28)
         for i in range(50):
@@ -179,7 +180,7 @@ def test_a_wider_view_holds_the_default_one():
             return {}
 
     def first_state(cls, seed):
-        env = cls(**FAST, god_mode=True)
+        env = cls(god_mode=True)
         try:
             env.reset(seed=seed)
             return env.last_gamestate
@@ -198,7 +199,7 @@ def test_reset_from_the_death_screen():
     """The death screen opens the journal, and a warp used to leave it open: the levels after it
     stayed paused (the clock stopped, the player did not move), or the reset never answered."""
     crouch, bomb, neutral, right = [1, 0, 0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 1, 0, 0, 0], [1, 1, 0, 0, 0, 0, 0, 0], [2, 1, 0, 0, 0, 0, 0, 0]
-    env = DefaultEnv(**FAST, hp=1)
+    env = DefaultEnv(hp=1)
     try:
         for wait in (28, 35, 150):  # steps after dying: on the death screen, coming in, long on it
             env.reset(seed=0)
@@ -226,7 +227,7 @@ def test_reset_from_the_death_screen():
 @pytest.mark.parametrize("n", [4])
 def test_parallel_envs(n):
     before = set(running_containers())
-    envs = gym.vector.AsyncVectorEnv([lambda: GetToExit(**FAST) for _ in range(n)])
+    envs = gym.vector.AsyncVectorEnv([lambda: GetToExit() for _ in range(n)])
     try:
         envs.reset(seed=0)
         start = time.monotonic()

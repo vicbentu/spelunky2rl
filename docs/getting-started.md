@@ -139,8 +139,7 @@ obs, info = env.reset(
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `seed` | int | Random | Random seed for level generation |
-| `speedup` | bool | False | Allow game to run faster than 60 FPS |
-| `state_updates` | int | 0 | Extra logic frames simulated per rendered frame when `speedup` (50-200 typical) |
+| `speedup` | bool | True | Run as fast as the machine allows; `False` plays in real time (60 FPS) |
 | `manual_control` | bool | False | Enable keyboard control (useful for testing) |
 | `god_mode` | bool | False | Player invulnerability |
 | `hp` | int | 4 | Starting health |
@@ -156,26 +155,20 @@ obs, info = env.reset(
 
 ## Performance Optimization
 
-For training, you'll want to maximize speed:
+The defaults are already the fastest setup for training: `speedup=True` and no render.
 
 ```python
-env = SpelunkyEnv(
-    speedup=True,           # Run faster than real-time
-    state_updates=200,      # Extra logic frames per rendered frame
-    render_enabled=False,   # Don't capture frames
-
-    # Training settings
-    frames_per_step=6,      # Balance between reactivity and speed
-)
+env = SpelunkyEnv()  # speedup=True, render_enabled=False, frames_per_step=6
 ```
 
-**Note**: with `render_enabled=False` the game also skips drawing the level. Above `state_updates≈50`
-the game is no longer the bottleneck (about 1,700 steps/s per instance with `frames_per_step=6`
-measured on a Ryzen 9 7900X); the rest is the per-step exchange with Python. Do not use
-`state_updates` when `render_enabled=True`: the frames you capture would skip most of the action.
+Without render the game skips drawing and runs 200 logic-only frames for each real one (the engine
+picks this; a step is the same game time either way), so the game is no longer the bottleneck: the
+per-step exchange with Python is. One instance, `get_to_exit`, Ryzen 9 7900X and RTX 3060: about
+1,600 steps/s with either renderer. With `speedup=False` the game runs in real time, 10 steps/s with
+`frames_per_step=6`.
 
-The game draws at `render_resolution`, so a smaller one is faster. Measured with `speedup=True`, no
-`state_updates`, calling `render()` every step, on a Ryzen 9 7900X and an RTX 3060:
+With `render_enabled=True` every frame is drawn, which costs most of the step. The game draws at
+`render_resolution`, so a smaller one is faster. Measured calling `render()` every step:
 
 | `render_resolution` | GPU renderer | CPU renderer (lavapipe) |
 |---|---|---|
@@ -189,7 +182,7 @@ than 160x90), so the game runs on a 160x90 screen whatever `render_resolution` s
 ### Many environments
 
 Each environment is its own game (one container on Linux), so run several in parallel. Measured on a
-Ryzen 9 7900X (24 threads) with `get_to_exit`, `state_updates=200`, one Python process per env:
+Ryzen 9 7900X (24 threads) with `get_to_exit` and the defaults, one Python process per env:
 
 | Containers | GPU renderer | CPU renderer (lavapipe) |
 |---|---|---|
@@ -272,8 +265,7 @@ Available log options:
 - The error message ends with the launcher's recent output (the container's, on Linux)
 
 **Game is too slow:**
-- Set `speedup=True`
-- Increase `state_updates` (start with 100, increase gradually)
+- Check that nothing passes `speedup=False` or `render_enabled=True` / `render_mode="rgb_array"`
 - Decrease `frames_per_step` (but this affects agent reactivity)
 
 **Slow episodes after 3 minutes of game time:**

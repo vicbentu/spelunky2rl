@@ -115,7 +115,11 @@ corre en los frames de `update_state()`: si no, la acción solo se aplicaría en
 Criterio: test de integración nuevo en `tests/integration/test_game.py` que lo comprueba y pasa.
 Si falla, parar: el resto del plan depende de esto (va a QUESTIONS con lo encontrado).
 
-## 3. `speedup=True` por defecto; `state_updates` lo elige el motor  ·  pending
+## 3. `speedup=True` por defecto; `state_updates` lo elige el motor  ·  done [2026-10-07 15:04]
+Resultado: unitarios 98 y de integración 11 en verde con la imagen `0.1.3.dev0` reconstruida;
+`GetToExit()` sin opciones 1.589–1.660 pasos/s con GPU y 1.563–1.610 con CPU. Además:
+`record_video.py` cuenta `DURATION` en segundos de vídeo (con `speedup` por defecto, 30 s de reloj
+eran minutos de vídeo).
 - `engine/core.py`: quitar `state_updates` de `_game_reset`; `speedup` por defecto `True`. El mensaje
   `reset` sigue llevando `state_updates` (el protocolo no cambia): `STATE_UPDATES` (constante, valor
   del paso 1) si `speedup` y sin render, si no 0. Pasar `state_updates=` da `TypeError` explicando

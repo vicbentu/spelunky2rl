@@ -76,8 +76,6 @@ def make_env(env_class, env_id: int, game_dir: str, stagger_delay: float = 2.0):
 
         env = env_class(
             frames_per_step=6,
-            speedup=True,
-            state_updates=150,
             render_enabled=False,
             game_dir=game_dir,
             manual_control=False
@@ -106,8 +104,6 @@ def test_single_env(env_class, duration: float, game_dir: str) -> Tuple[int, flo
 
     env = env_class(
         frames_per_step=6,
-        speedup=True,
-        state_updates=150,
         render_enabled=False,
         game_dir=game_dir,
         manual_control=False
