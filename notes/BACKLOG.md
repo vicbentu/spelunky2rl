@@ -55,15 +55,6 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   a ~1 GiB con GPU: con 16 instancias, ~45 GiB frente a ~16, lo que limita cuántas caben en una máquina
   sin GPU. Mirar de dónde sale (hilos de llvmpipe por contenedor, `LP_NUM_THREADS`; cachés de shaders de
   DXVK/Mesa) y si se puede bajar sin perder pasos/s. Sin investigar.
-- [2026-10-01 00:53 @4cdc78a] Revisar el mecanismo de velocidad (`speedup` + `state_updates`), hecho a
-  mano en su día. Hoy: `set_speedhack(100)` y, en cada `POST_UPDATE` del motor, `update_state()`
-  `state_updates` veces (final de `on_post_update` en `spelunky2rl/session.lua`; solo con `speedup=True`). La idea es amortizar
-  el coste fijo de cada frame del motor (`Present` de DXVK, bucle de Wine), que
-  `render=False` no quita: solo evita dibujar nivel y HUD (+18 % a `state_updates=0`). Sin medir:
-  pasos/s con `render=False` y `state_updates` = 0/10/50/200, ni si hay una vía mejor (p. ej. un
-  bucle propio de `update_state()` mientras Python manda pasos, sin volver al motor, o quitar el
-  speedhack si `state_updates` ya lo cubre). Si `state_updates` alto es siempre mejor, quizá no debería
-  ser un parámetro del usuario.
 - [2026-10-01 20:52 @2880e06] `reset` en `main.lua`: espera fija de 60 frames tras el `warp` antes de
   aplicar `destroy_entities`/`set_start_values` y mandar el estado. Si a los 60 frames no hay jugador,
   `set_start_values` indexa `players[1]` (`nil`) y falla. Mirar si se puede esperar a que el nivel esté
@@ -107,11 +98,3 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   Playlunky compitiendo con el arranque? medido cuando también se inyectaba Overlunky); el backtrace de winedbg no llega a la salida del
   contenedor, probar con `WINEDEBUG=+seh`. Scripts en `~/Desktop/tmp/spelunky/connreset/` (`stress.py`
   N_WORKERS N_ARRANQUES, `capture_plugin.py` guarda la salida de cada contenedor, `crashes.sh`).
-- [2026-10-07 11:22 @51ba379] Con `render_enabled=True` dibujar solo el último frame de cada paso. Hoy, con
-  `frames_per_step=6`, el juego dibuja los 6 frames del paso y el agente solo ve el último. El mod ya
-  sabe saltarse el dibujado (con `render=False` devuelve `true` en `ON.RENDER_PRE_GAME`, `control.lua`);
-  habría que activarlo y desactivarlo frame a frame en `session.lua` según `frames_left`. Medido
-  (`GetToExit`, speedup, una instancia, ms por paso con render; `render()` captura aparte):
-  160x90 GPU 2,0 / CPU 8,9; 640x360 GPU 2,1 / CPU 12,9; sin render ~1,9 / ~2,0. Con CPU dibujar es
-  casi todo el paso y podría bajar ~6x; con GPU apenas cambiaría. Sin probar: que el frame dibujado
-  salga completo (no a medias o del frame anterior) y si saltarse el dibujado deja algo sin actualizar.
