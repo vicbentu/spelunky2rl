@@ -38,9 +38,9 @@ from spelunky2rl.envs.get_to_exit import SpelunkyEnv
 MODEL_PATH = "./models_get_to_exit/final_model.zip"
 
 # Recording settings
-DURATION = 30           # Recording duration in seconds
+DURATION = 30           # Video length in seconds (game time, not wall-clock time)
 OUTPUT_DIR = "./videos"  # Directory to save videos
-FPS = 10                # One video frame per step: 60 game frames/s / frames_per_step=6 = real time
+FPS = 60                # Every game frame (render_mode="rgb_array_list"): the game runs at 60 frames/s
 USE_LSTM = True         # Set to True if model uses RecurrentPPO, False for PPO
 DETERMINISTIC = True    # Use deterministic actions (recommended for videos)
 
@@ -51,7 +51,7 @@ def record_agent_video(
     model_path: str,
     duration: int = 30,
     output_dir: str = "./videos",
-    fps: int = 10,
+    fps: int = 60,
     use_lstm: bool = True,
     deterministic: bool = True
 ):
@@ -60,7 +60,7 @@ def record_agent_video(
 
     Args:
         model_path: Path to saved model (.zip file)
-        duration: Recording duration in seconds
+        duration: Video length in seconds (game time, not wall-clock time)
         output_dir: Directory to save the video
         fps: Target frames per second for output video
         use_lstm: True if model is RecurrentPPO, False if PPO
@@ -91,8 +91,7 @@ def record_agent_video(
             # The game folder comes from SPELUNKY2RL_GAME_DIR (or pass game_dir="...")
 
             frames_per_step=6,      # Same as train_get_to_exit.py: the model acts at the pace it learned
-            speedup=False,          # Don't speed up (real-time looks better)
-            render_enabled=True,    # ENABLE FRAME GRABBING
+            render_mode="rgb_array_list",  # render() returns every frame since the last call
             manual_control=False,
             god_mode=False
         )
@@ -115,9 +114,9 @@ def record_agent_video(
         episode_start = np.array([True])
 
         # -------- Setup Video Writer -----------------------------------------
-        # Get frame dimensions
-        first_frame = env.render()
-        h, w, c = first_frame.shape
+        # Get frame dimensions: after reset, render() returns the reset's frame
+        frames = env.render()
+        h, w, c = frames[0].shape
         print(f"✓ Video dimensions: {w}x{h}")
 
         # Create video writer
@@ -130,18 +129,22 @@ def record_agent_video(
         print("✓ Video writer initialized")
         print()
 
+        def write(frames):
+            for frame in frames:
+                video_writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))  # render() is RGB, OpenCV wants BGR
+            return len(frames)
+
         # -------- Record Video -----------------------------------------------
         print(f"Recording {duration} seconds of gameplay...")
         print("Press Ctrl+C to stop early")
         print()
 
         start_time = time.time()
-        end_time = start_time + duration
-        frame_count = 0
+        frame_count = write(frames)
         episode_count = 0
         last_progress_time = start_time
 
-        while time.time() < end_time:
+        while frame_count < duration * fps:
             # Get action from model
             if use_lstm:
                 action, lstm_state = model.predict(
@@ -159,10 +162,8 @@ def record_agent_video(
             # Update episode start flag for LSTM
             episode_start = np.array([done or truncated])
 
-            # Capture and write frame
-            frame = env.render()
-            video_writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))  # render() is RGB, OpenCV wants BGR
-            frame_count += 1
+            # Write the frames of this step (and of the reset before it, if there was one)
+            frame_count += write(env.render())
 
             # Reset if episode ends
             if done or truncated:
@@ -177,12 +178,8 @@ def record_agent_video(
             # Show progress every 5 seconds
             current_time = time.time()
             if current_time - last_progress_time >= 5:
-                elapsed = current_time - start_time
-                remaining = duration - elapsed
-                progress = (elapsed / duration) * 100
-                print(f"Progress: {progress:.1f}% - "
-                      f"{remaining:.1f}s remaining - "
-                      f"{frame_count} frames recorded")
+                progress = frame_count / (duration * fps) * 100
+                print(f"Progress: {progress:.1f}% - {frame_count} frames recorded")
                 last_progress_time = current_time
 
         # -------- Cleanup ----------------------------------------------------
@@ -199,7 +196,7 @@ def record_agent_video(
         print(f"Frames recorded: {frame_count}")
         print(f"Episodes: {episode_count}")
         print(f"Recording time: {elapsed_time:.2f} seconds")
-        print(f"Actual FPS: {actual_fps:.2f}")
+        print(f"Recorded at: {actual_fps:.2f} frames/s of wall-clock time")
         print(f"Video saved to: {output_file}")
 
         # Verify file was created

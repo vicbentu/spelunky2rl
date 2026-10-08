@@ -53,6 +53,7 @@ function M.destroy_entities(entity_types)
 end
 
 -- 100x the game's clock, so that it runs as fast as the machine allows, or back to real time.
+-- Only needed with render: without it the state_updates loop already runs past the 60 FPS cap.
 function M.set_speedup(enabled)
     set_speedhack(enabled and 100 or 1)
 end
@@ -60,13 +61,13 @@ end
 -- The game options of a reset message. vsync, audio, time_ghost and render keep their current value
 -- when the message does not carry them.
 function M.apply_options(options)
-    M.set_speedup(options.speedup)
     if options.vsync ~= nil then set_setting(GAME_SETTING.VSYNC, options.vsync and 1 or 0) end
     if options.audio ~= nil then set_setting(GAME_SETTING.MASTER_ENABLED, options.audio and 1 or 0) end
     if options.time_ghost ~= nil then set_time_ghost_enabled(options.time_ghost) end
     if options.render ~= nil then
         render_enabled = options.render
     end
+    M.set_speedup(options.speedup and render_enabled)
     god(options.god_mode and true or false)
 end
 

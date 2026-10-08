@@ -95,7 +95,7 @@ class WineLauncher(Launcher):
         game = assemble_instance(self.game_dir, self._instance_dir / "game", self.home / "steam_api64.dll",
                                  mod=mod, cache=self.cache.path)
 
-        self._xvfb = subprocess.Popen(["Xvfb", self.display, "-screen", "0", "640x360x24", "-nolisten", "tcp"],
+        self._xvfb = subprocess.Popen(["Xvfb", self.display, "-screen", "0", "{}x{}x24".format(*self.screen), "-nolisten", "tcp"],
                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         socket_path = Path(f"/tmp/.X11-unix/X{port}")
         deadline = time.monotonic() + 10
@@ -140,7 +140,8 @@ class WineLauncher(Launcher):
             self._slot_lock.close()
         self._game = self._launcher = self._xvfb = self._instance_dir = self._slot_lock = None
 
-    def frame_source(self) -> FrameSource:
+    def frame_source(self, timeout: float) -> FrameSource:
+        # the capture layer is only in the Docker image: the latest frame on screen, maybe an older one
         from ..frames.x11 import X11FrameSource
 
         return X11FrameSource(self.display)

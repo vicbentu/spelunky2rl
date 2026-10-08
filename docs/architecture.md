@@ -107,7 +107,8 @@ def __init__(self, game_dir=None, launcher="auto", renderer="auto", **kwargs):
    If the game dies before connecting it is relaunched, up to `max_launch_attempts`, all within
    `startup_timeout`. Errors include the launcher's recent output.
 3. Reads the mod's hello and checks the protocol version (`engine/protocol.py`).
-4. If `render_enabled`, asks the launcher for a frame source.
+4. With a `render_mode`, asks the launcher for a frame source; `"rgb_array_list"` needs one that
+   counts frames (`counts_frames`, only `VulkanFrameSource`), else it is a `ValueError`.
 
 ### Launchers (engine/launchers/)
 
@@ -134,6 +135,17 @@ used: it draws its UI into every frame.
 
 `local.cfg` opens the game as a borderless window filling the Xvfb screen: fullscreen leaves every
 frame black under Wine + Xvfb, and a framed window leaves a black band where the title bar would be.
+The game draws at the screen's size (`resolutionx/y` do not matter), keeping 16:9 with black bars
+otherwise. The engine sets `launcher.screen` before starting it: `render_resolution` when
+`render_enabled`, else 160x90: the screen size changes the speed even when the mod skips drawing
+the level. The Docker launcher passes it as `SCREEN=WxH`.
+
+The engine also sets `launcher.capture` (true with render) and `launcher.capture_frames`, how many
+of the last frames the capture keeps (`frames_per_step` with `render_mode="rgb_array_list"`, else 1).
+The Docker launcher then makes a directory for the instance in `/dev/shm`, mounts it at `/capture`
+and turns on the image's Vulkan layer (`SPELUNKY2RL_CAPTURE_LAYER=1`,
+`SPELUNKY2RL_CAPTURE=/capture/frame`, `SPELUNKY2RL_CAPTURE_SLOTS`); `stop()` deletes it.
+See "Which frame `render()` returns" below.
 
 ### The Lua mod (mod/lua/)
 
@@ -143,9 +155,9 @@ shows everything the mod attaches to:
 | Module | Owns | Hooked to |
 |---|---|---|
 | `protocol.lua` | the socket, the hello, `PROTOCOL_VERSION` and `MOD_VERSION` | connects when the script loads |
-| `session.lua` | the last command from Python, the frame countdown, the simulated frames | `ON.POST_UPDATE` |
+| `session.lua` | the last command from Python, the frame countdown, the simulated frames, the frames drawn | `ON.PRE_GAME_LOOP`, `ON.PRE_UPDATE`, `ON.POST_UPDATE`, `ON.RENDER_POST_HUD` |
 | `control.lua` | starting a level (warp, themes), start values, destroying entities, game options, the pause flag, skipping the render | `ON.RENDER_PRE_GAME`, `ON.RENDER_PRE_HUD` |
-| `input.lua` | the input held for the agent, `manual_control` | `ON.PRE_UPDATE` |
+| `input.lua` | the input held for the agent, `manual_control` | `ON.PRE_UPDATE`, through `session.lua` |
 | `observations.lua` | the player's last values, the `win` flag, the fields of the episode; builds the game state and packs it as its layout says | `ON.TRANSITION` |
 | `pathfinding.lua` | the floor tile table and the distance field to the nearest exit | spawn and destruction of floor tiles |
 | `util.lua` | `round`, `safe` | |
@@ -166,9 +178,27 @@ is registered only in `main.lua`. `luasocket/` is the vendored socket library.
      is sent.
    - `step` starts by holding the action and is answered `frames` frames later.
    - `close` releases the input, restores the game speed and exits the game. So does a lost connection.
-3. With `speedup`, `update_state()` runs `state_updates` more logic frames. Each of them fires
+3. With `speedup`, `update_state()` runs `state_updates` more logic frames (the engine sends 200
+   without render, 0 with it). Each of them fires
    `ON.POST_UPDATE` again and goes through steps 1 and 2: commands are received and answered inside
    that loop.
+
+**With render** (`render` in the reset message) only the last frame of each command is drawn, and
+its answer waits for it:
+
+- Right after starting a command, `update_state()` runs all its frames but the last (`frames - 1`,
+  59 for a `reset`); they fire `ON.PRE_UPDATE` and `ON.POST_UPDATE` as real frames do. The game's own
+  next frame is the last one.
+- When the countdown reaches 0 the mod does not answer in `ON.POST_UPDATE`: the answer is pending.
+  While it is, `ON.PRE_UPDATE` returns `true`, which skips the logic frame, so the state does not
+  move.
+- `ON.RENDER_POST_HUD` counts the frames drawn (`drawn`). At the next `ON.PRE_GAME_LOOP` after a
+  frame was drawn, the mod answers with that count, blocks for the next command and starts it.
+
+**With `render_all`** as well (`render_mode="rgb_array_list"`) every frame is drawn: no
+`update_state()` at the start of a command, and `ON.PRE_UPDATE` also returns `true` while the last
+logic frame has not been drawn. With the speedhack the game would otherwise run several logic frames
+per turn of its loop and draw only the last; this way each logic frame is drawn exactly once.
 
 **Details that environments rely on**:
 
@@ -222,11 +252,12 @@ def reset(self, seed=None, options=None, **kwargs):
 The `_game_reset()` method sends configuration to Lua:
 
 ```python
-def _game_reset(self, seed, speedup, state_updates, hp, bombs, ...):
+def _game_reset(self, seed, speedup, hp, bombs, ...):
     self._send_dict({
         "command": "reset",
         "speedup": speedup,
-        "state_updates": state_updates,
+        # picked by the engine: STATE_UPDATES (200) with speedup and no render, else 0
+        "state_updates": STATE_UPDATES if speedup and not self.render_enabled else 0,
         "seed": seed,
         "ent_types_to_destroy": ent_types_to_destroy,
         "fields": self.fields,  # data_to_send, resolved by engine/fields.py
@@ -292,7 +323,9 @@ bytes, packed in binary.
 }
 ```
 
-**Lua → Python**: `{"state": 1352}` and 1352 bytes, which `StateLayout` reads into the gamestate dict:
+**Lua → Python**: `{"state": 1352, "drawn": 812}` and 1352 bytes, which `StateLayout` reads into the
+gamestate dict. `drawn` is the count of frames the game has drawn (see "Which frame `render()`
+returns"):
 
 ```python
 {
@@ -357,7 +390,7 @@ which can come instead of any answer.
 Right after connecting, the mod sends:
 
 ```json
-{"hello": {"protocol": 2, "mod": "0.1.2"}}
+{"hello": {"protocol": 3, "mod": "0.1.3"}}
 ```
 
 Python compares `protocol` with `PROTOCOL_VERSION` and fails with a message naming the image to
@@ -383,11 +416,19 @@ changes shape; the image tag always equals the package version.
     "ropes": 4,
     "gold": 0,
     "world": 1,
-    "level": 1
+    "level": 1,
+    "time_ghost": true,
+    "audio": false,
+    "vsync": false,
+    "render": false,
+    "render_all": false
 }
 ```
 
 An optional `"theme"` (overlunky `THEME` id) overrides the default theme for `world`/`level`.
+`render` is true with a `render_mode` (draw the last frame of each command, and answer once it is
+drawn); `render_all` too with `"rgb_array_list"` (draw every frame). Protocol version 3 added
+`drawn` to the answers and `render_all` to this message.
 
 The Lua script responds with the layout and the initial gamestate.
 
@@ -512,35 +553,34 @@ env = SpelunkyEnv(frames_per_step=6)  # Default: 6 frames (~10 actions/sec at 60
 - Lower values → More reactive but slower training
 - Higher values → Faster training but less precise control
 
-### State Updates (Speedup)
+### Speed (`speedup`)
 
-`state_updates` makes each rendered frame carry N extra logic frames:
+`speedup=True` (the default) runs the game as fast as the machine allows; `speedup=False` plays it
+in real time (60 FPS). How the engine does it depends on whether anyone reads the frames:
 
-```python
-env.reset(speedup=True, state_updates=200)
-```
+- **No render**: each real frame carries `state_updates` extra logic frames, which are not drawn.
+  The engine sends `STATE_UPDATES` (200, in `engine/core.py`); users cannot set it. The game clock
+  stays at 1x: with 200 logic frames per real one, the 60 FPS cap is no longer the limit (measured:
+  the same ~1,600 steps/s with and without the speedhack).
+- **Render**: only the last frame of each step is drawn (every frame with `"rgb_array_list"`); the
+  mod runs the others itself with `update_state()` when the step starts (see the Lua mod above), so
+  `state_updates` is 0. The mod sets a 100x speedhack on the game's clock (`set_speedhack(100)` in
+  `control.lua`); without it the game would wait for 60 FPS between those drawn frames.
 
-**How it works** (Lua side): in `ON.POST_UPDATE`, after the protocol work, the mod calls
+A step is the same game time with any `state_updates` (each extra frame runs the agent's input and
+counts towards `frames`), which `test_state_updates_do_not_change_the_game` checks.
+
+**How the extra frames work** (Lua side): in `ON.POST_UPDATE`, after the protocol work, the mod calls
 `update_state()` N times. Each call simulates one logic frame and fires `POST_UPDATE` again, which
 runs the protocol for that frame (so steps and replies happen inside the loop); a flag stops those
 nested calls from starting their own loop. Earlier versions recursed instead, N levels deep, which
 is why high values used to crash.
 
-**Limits**: above ~50 the game is no longer the bottleneck; the per-step exchange with Python is.
-Do not combine with `render_enabled=True`: captured frames would skip most of the action.
+**Limits**: past ~200 the game is no longer the bottleneck; the per-step exchange with Python
+(~0.6 ms) is.
 
-With `render_enabled=False` the mod also returns `true` from `ON.RENDER_PRE_GAME` and
-`ON.RENDER_PRE_HUD`, so the level is not drawn at all (+~20 % steps/s without `state_updates`).
-
-### Speedup Flag
-
-`speedup=True` makes the game run faster than real time (a 100x speedhack on the game's clock):
-
-```python
-env.reset(speedup=True)
-```
-
-Allows the game to run as fast as the CPU permits.
+Without a `render_mode` the mod also returns `true` from `ON.RENDER_PRE_GAME` and
+`ON.RENDER_PRE_HUD`, so the real frames are not drawn either, and the screen is 160x90.
 
 ### Data Optimization
 
@@ -565,27 +605,71 @@ data_to_send = ["map_info", "dist_to_goal", "entity_info"]
 
 ### Render Mode
 
-Frame grabbing has significant overhead:
+`render_mode` is `None`, `"rgb_array"` (the last frame of each step is drawn; `render()` returns
+it) or `"rgb_array_list"` (every frame is drawn; `render()` returns those since its last call).
+`render_enabled=True` is the old name of `"rgb_array"`. What each costs, for users: "Speed and
+images" in `getting-started.md`. `metadata["render_fps"]` is 60 with `"rgb_array_list"` and
+60 / `frames_per_step` with `"rgb_array"` (set per instance), so that a video of what `render()`
+returns plays at the game's speed.
 
-```python
-# Training (fast)
-env = SpelunkyEnv(render_enabled=False)
+**Frame sources** (`engine/frames/`), created by the launcher only with a `render_mode`:
 
-# Evaluation/recording (slow)
-env = SpelunkyEnv(render_enabled=True)
-frame = env.render()  # Returns numpy array
+- `VulkanFrameSource` (Docker): reads the frames the image's Vulkan layer copies to the instance's
+  file in `/dev/shm`, the state's own frame and, with `"rgb_array_list"`, those before it (below).
+- `X11FrameSource` (Wine): grabs the instance's Xvfb display with `mss`. It cannot tell frames
+  apart, so the image may be one or more frames older than the state.
+
+**Which frame `render()` returns.** One turn of the game's main loop runs these callbacks in this
+order (measured with Playlunky 0.19.0):
+
+```
+PRE_GAME_LOOP → PRE_UPDATE → (logic frame) → POST_UPDATE → GAMEFRAME → FRAME → POST_GAME_LOOP
+  → RENDER_PRE_GAME → RENDER_POST_GAME → RENDER_PRE_HUD → RENDER_POST_HUD → GUIFRAME
+  → (Present) → PRE_PROCESS_INPUT → POST_PROCESS_INPUT → next PRE_GAME_LOOP
 ```
 
-**Frame sources** (`engine/frames/`), created by the launcher only when `render_enabled=True`:
+If the mod answered in `POST_UPDATE`, as it does without render, the state's frame would be drawn
+only after the next command arrived, and the screen would show a frame 1 to 3 logic frames older
+(measured). So with render the mod answers in the next `PRE_GAME_LOOP`, once the frame has been
+drawn (see the Lua mod above). That is not enough for a screen grab: `Present` hands the frame to
+DXVK, which shows it on the X server 1 to 3 ms later, in its own thread, and nothing in the game
+or in Playlunky's API runs after that.
 
-- `X11FrameSource` (Docker, Wine): grabs the instance's Xvfb display with `mss`. With host networking
-  the container's X server is reachable from the host as display `:<port>`.
+The frame is taken at `Present` itself instead, by an implicit Vulkan layer between DXVK and the
+driver (`docker/vklayer/capture.c`, built into the image, on only with
+`SPELUNKY2RL_CAPTURE_LAYER=1`). On every `vkQueuePresentKHR` it copies the image to a host buffer,
+waits for the copy, writes it to `SPELUNKY2RL_CAPTURE` and only then raises the count. The mod
+counts the same frames (`drawn`, in `RENDER_POST_HUD`) and sends the count with the state;
+`render()` waits until the layer's count reaches it and reads the pixels (`engine/frames/vulkan.py`).
+A count past it would mean the two disagree, and is an error rather than a wrong image.
+
+The file is a ring of the last `SPELUNKY2RL_CAPTURE_SLOTS` frames: a 4096-byte header (magic,
+version, frame count, number of slots, slot size), then the slots. Frame n goes to slot
+(n − 1) mod slots, a 64-byte header (its frame number, size, Vulkan format, row stride, copy time)
+and the pixels. With `"rgb_array_list"` there are `frames_per_step` slots, and after each step and
+reset the engine reads the frames since the previous state (`get_frames`) while the game waits for
+the next command; a slot whose number is not the frame asked for was overwritten, and is an error.
+`render()` then returns the frames gathered since its last call, as
+`gymnasium.wrappers.RenderCollection` does; `reset()` starts the list again with its own frame (the
+frames of the level loading are not the episode's).
+
+Checked by drawing `state.time_level` as a colour in a corner and comparing it with `time` in the
+state: the same in every step and every reset (GPU and CPU, `frames_per_step` 1 and 6, 160x90 to
+1280x720, 1,500 steps with deaths and resets). ms per step + `render()`, `GetToExit`:
+
+| | GPU 160x90 | GPU 640x360 | CPU 160x90 | CPU 640x360 |
+|---|---|---|---|---|
+| every frame drawn, screen grab (older frame) | 2.1 | 2.7 | 8.7 | 13.1 |
+| last frame drawn, layer (state's frame) | 1.5 | 1.7 | 4.1 | 5.9 |
+
+With `"rgb_array_list"` the same check holds for every frame: each step's 6 frames are consecutive
+logic frames and the last is the state's.
 
 ## Error Handling
 
 ### Lua Errors
 
-`session.on_post_update` runs inside `xpcall`. When anything in it fails, the mod sends the error
+`session.on_post_update` and `session.on_pre_game_loop` run inside `xpcall`. When anything in it fails, the mod sends the error
 with its traceback and exits the game; Python raises it from the `reset()` or `step()` that was
 waiting:
 
@@ -600,7 +684,7 @@ stack traceback:
 ```
 
 The environment cannot be used after that; create a new one. Errors in the other callbacks
-(`ON.PRE_UPDATE`, `ON.TRANSITION`, the render hooks) are not caught and only reach the game's log.
+(`ON.PRE_UPDATE`, `ON.TRANSITION`, `ON.RENDER_POST_HUD`, the render hooks) are not caught and only reach the game's log.
 
 ### Connection Errors
 
@@ -648,14 +732,15 @@ def log_step(self, gamestate):
 From `pyproject.toml`:
 
 - **gymnasium**, **numpy**, **psutil**
-- **mss**: `render` extra, frame capture on Linux
+- **mss**: `render` extra, frame capture with the Wine launcher
 - **torch**, **stable-baselines3**, **sb3-contrib**: `train` extra, only for the examples
 
 ### System Dependencies
 
 - **Spelunky 2**: your own copy of the game
 - Linux: **Docker** (and the NVIDIA Container Toolkit for GPU rendering). The image
-  (`docker/Dockerfile`) contains Wine, DXVK, Xvfb, Playlunky (patched) and the Goldberg emulator,
+  (`docker/Dockerfile`) contains Wine, DXVK, Xvfb, Playlunky (patched), the Goldberg emulator and
+  the frame capture layer (`docker/vklayer/`),
   pinned in `docker/versions.env`.
 - Windows: not supported yet
 

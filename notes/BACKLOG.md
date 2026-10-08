@@ -19,6 +19,26 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   juego en un Xvfb que nadie ve y al que no llega ninguna tecla; el jugador se queda quieto.
   `examples/manual_control.py` y `getting-started.md` (l. 198-222) prometen jugar con el teclado.
   Arreglarlo (VNC con `x11vnc` al Xvfb, o en `wine` usar el `DISPLAY` del host) o quitar la opción.
+- [2026-10-07 14:57 @463aef0] `envs/get_to_exit.py`: `min_dist_to_goal` y `no_improve_counter` solo se reinician al
+  acabar el episodio (`done or truncated`), no en `reset()`. Si se llama a `reset()` a mitad de un
+  episodio (p. ej. evaluaciones con un límite de pasos propio, o `AsyncVectorEnv` tras un error), el
+  episodio siguiente arrastra el mínimo y el contador del anterior y se trunca antes de 200 pasos sin
+  mejorar. Visto al repetir 500 pasos con `reset(seed=3)` dos veces en el mismo entorno: la segunda
+  tanda se truncó en el paso 199. Arreglo: reiniciarlos en `reset` (o en `gamestate_to_observation`
+  del primer estado) y un test unitario.
+- [2026-10-07 23:09 @ab0152c] `tests/integration/test_game.py::test_parallel_envs[4]` (4 `GetToExit` sin render en
+  `AsyncVectorEnv`, 500 pasos) falló 2 veces de 46.
+  - El primer fallo fue en la suite completa: `TimeoutError: No response from the Spelunky Lua
+    script in 60.0 s` en un `step` de uno de los workers.
+  - El segundo fue el test solo, a los 20 s (lo que dura uno que pasa). No se guardó qué assert falló.
+  - Los dos fueron en las primeras ejecuciones tras reconstruir la imagen `0.1.3.dev0` (paso 6 de
+    "Velocidad y render").
+  - Después, 0 fallos de 35: 10 con el mod de `ab0152c` montado con `SPELUNKY2RL_DEV_MOD`, 10 con el
+    nuevo y 15 más.
+  - Sin render, el mod nuevo hace lo mismo que el de `ab0152c`.
+  - Para reproducirlo, repetir el test con `-rA` guardando la salida, y mirar si es un cuelgue del
+    juego (Spel2.exe vivo pero sin responder) o la muerte de Spel2.exe a mitad (ver la idea de los
+    arranques que mueren).
 
 ## Improvements
 
@@ -29,13 +49,6 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   soportados junto a las versiones fijadas de la imagen, comprobarla antes de lanzar y en `doctor`, y
   decir en el error qué build tiene el usuario y cuál espera la imagen. Venía de la tabla de riesgos
   del plan de retoma.
-- [2026-09-28 15:38 @9f537a6] Resolución de `render()` configurable (hoy fija en 640x360). La deciden dos
-  cosas que deben coincidir: el tamaño de pantalla de Xvfb (`docker/entrypoint.sh` y `WineLauncher`,
-  `640x360x24`) y `local.cfg` (`engine/launchers/config/local.cfg`: ventana `window_mode=2` al
-  `window_scale=100` % de la pantalla; `resolutionx/y`). Propuesta: parámetro `render_resolution=(w, h)`
-  → variable `RESOLUTION` al contenedor → el entrypoint arranca Xvfb a ese tamaño y escribe `local.cfg`
-  a juego. Sin probar: que `window_scale=100` llene pantallas mayores (sí lo hace a 640x360) y el coste
-  de render (GPU poco; con `renderer="cpu"` crece con los píxeles). Solo afecta con `render_enabled`.
 - [2026-09-30 22:59 @df58df3] Ruta del juego permanente y configurable desde el CLI. Hoy solo existe
   `game_dir=` o `SPELUNKY2RL_GAME_DIR` (resuelto en `make_launcher`, `engine/launchers/__init__.py`); no
   hay fichero de configuración y el `export` se pierde al cerrar la terminal (`docs/getting-started.md`
@@ -55,6 +68,14 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   `package.loadlib` y la ruta de `script_path.lua`. Quitarla y pasar
   `tests/integration`. Solo probado bajo Wine en Docker; no la quité en la reorganización porque no
   puedo probarlo en Windows nativo.
+- [2026-10-07 21:14 @1ec06d0] From "Velocidad y render", paso 5: con `launcher="wine"` `render()` sigue capturando
+  el Xvfb con mss (`X11FrameSource`), así que puede devolver un frame 1–3 frames anterior al estado; la
+  capa de Vulkan (`docker/vklayer/capture.c`) solo está en la imagen de Docker. Para llevarla:
+  `scripts/setup_wine.sh` la compila (gcc + cabeceras de Vulkan) en el wine home junto a un
+  `capture.json` con la ruta absoluta del `.so`; `WineLauncher` pone `VK_ADD_LAYER_PATH`,
+  `SPELUNKY2RL_CAPTURE_LAYER=1` y `SPELUNKY2RL_CAPTURE` (un directorio en `/dev/shm` por instancia,
+  borrado en `stop()`) con `capture`, y `frame_source` devuelve `VulkanFrameSource`, como
+  `DockerLauncher`. El mod ya lo hace todo.
 
 ## Ideas
 
@@ -62,19 +83,6 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   a ~1 GiB con GPU: con 16 instancias, ~45 GiB frente a ~16, lo que limita cuántas caben en una máquina
   sin GPU. Mirar de dónde sale (hilos de llvmpipe por contenedor, `LP_NUM_THREADS`; cachés de shaders de
   DXVK/Mesa) y si se puede bajar sin perder pasos/s. Sin investigar.
-- [2026-10-01 00:53 @4cdc78a] Revisar el mecanismo de velocidad (`speedup` + `state_updates`), hecho a
-  mano en su día. Hoy: `set_speedhack(100)` y, en cada `POST_UPDATE` del motor, `update_state()`
-  `state_updates` veces (final de `on_post_update` en `spelunky2rl/session.lua`; solo con `speedup=True`). La idea es amortizar
-  el coste fijo de cada frame del motor (`Present` de DXVK, bucle de Wine), que
-  `render=False` no quita: solo evita dibujar nivel y HUD (+18 % a `state_updates=0`). Sin medir:
-  pasos/s con `render=False` y `state_updates` = 0/10/50/200, ni si hay una vía mejor (p. ej. un
-  bucle propio de `update_state()` mientras Python manda pasos, sin volver al motor, o quitar el
-  speedhack si `state_updates` ya lo cubre). Si `state_updates` alto es siempre mejor, quizá no debería
-  ser un parámetro del usuario.
-- [2026-09-28 14:02 @996066a] Render por memoria compartida con número de secuencia, solo si se quieren
-  píxeles como observación (hoy `render()` lee el Xvfb con mss).
-- [2026-09-28 14:02 @996066a] Captura dentro del juego enganchando `IDXGISwapChain::Present`, mismo caso
-  que el anterior.
 - [2026-10-01 20:52 @2880e06] `reset` en `main.lua`: espera fija de 60 frames tras el `warp` antes de
   aplicar `destroy_entities`/`set_start_values` y mandar el estado. Si a los 60 frames no hay jugador,
   `set_start_values` indexa `players[1]` (`nil`) y falla. Mirar si se puede esperar a que el nivel esté

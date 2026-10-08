@@ -6,8 +6,8 @@ local socket = require("luasocket.socket")
 local M = {}
 
 -- Keep in sync with PROTOCOL_VERSION in engine/protocol.py and __version__ in version.py
-local PROTOCOL_VERSION = 2
-local MOD_VERSION = "0.1.2"
+local PROTOCOL_VERSION = 3
+local MOD_VERSION = "0.1.3"
 
 local client = nil
 

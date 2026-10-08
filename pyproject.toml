@@ -36,7 +36,7 @@ train = [
     "sb3-contrib",
 ]
 
-# render() on Linux (captures the instance's X display)
+# render() with launcher="wine" (captures the instance's X display; Docker does not need it)
 render = [
     "mss>=10.2",
 ]

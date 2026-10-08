@@ -36,3 +36,39 @@ Descartado:
 
 Para cambiarlo: añadir `- run: sudo apt-get install -y lua5.4` antes de `pytest` en
 `.github/workflows/ci.yml`; o borrar el fichero de tests.
+
+### render-fps-per-mode · [2026-10-07 23:03 @ab0152c] `render_fps` es 60/k con `"rgb_array"` y 60 con `"rgb_array_list"`; se graba con `save_video`
+
+El paso 6 del plan suponía que `gymnasium.wrappers.RecordVideo` con `"rgb_array_list"` graba los k
+frames de cada paso. No es así: en Gymnasium 1.3 (`RecordVideo._capture_frame`) guarda solo el último
+de cada lista. Medido con 50 pasos de k=6 a 320x180: `RecordVideo` sobre `"rgb_array_list"` da 51
+frames a 60 FPS (0,85 s, el juego 6 veces acelerado). La herramienta de Gymnasium para guardar todos
+los frames de `"rgb_array_list"` es `gymnasium.utils.save_video.save_video(env.render(), carpeta,
+fps=env.metadata["render_fps"])`: 301 frames a 60 FPS (5,02 s, a la velocidad del juego).
+
+Antes, `metadata["render_fps"]` era 60 en todo caso. Con `"rgb_array"`, `RecordVideo` graba un frame
+por paso, así que el vídeo salía 6 veces acelerado.
+
+Elegí que `render_fps` sea lo que de verdad devuelve `render()`:
+- 60 con `"rgb_array_list"` (todos los frames);
+- 60/`frames_per_step` con `"rgb_array"` (10 con k=6; `RecordVideo` da 51 frames a 10 FPS, 5,1 s).
+
+Se fija por instancia en `__init__`; el de la clase sigue en 60.
+
+El criterio del paso 6 queda así:
+- `save_video` con `"rgb_array_list"` escribe un vídeo de 60 FPS con 6 frames por paso;
+- `RecordVideo` con `"rgb_array"` escribe uno a tiempo real.
+
+`examples/record_video.py` usa `"rgb_array_list"` y OpenCV, como antes, a 60 FPS.
+
+Descartado:
+- `render_fps` = 60 siempre: es lo de antes, y con `RecordVideo` el vídeo sale acelerado k veces.
+- Que `render()` en modo lista devuelva un solo frame para que `RecordVideo` lo entienda: va contra
+  la convención de Gymnasium (`RenderCollection`, `save_video`).
+
+Coste si me equivoco: quien grabe con `RecordVideo` sobre `"rgb_array"` y esperara el vídeo acelerado
+lo verá ahora a tiempo real. Si se cambia `frames_per_step` después de crear el entorno, `render_fps`
+no se actualiza.
+
+Para cambiarlo: borrar las tres líneas `if self.render_mode == "rgb_array": self.metadata = …` en
+`SpelunkyRLEngine.__init__` (`engine/core.py`) y `test_render_fps_is_that_of_what_render_returns`.

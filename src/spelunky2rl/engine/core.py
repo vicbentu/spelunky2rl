@@ -16,6 +16,30 @@ from .fields import resolve_fields
 from .protocol import Connection, StateLayout, check_hello
 
 HELLO_TIMEOUT = 15.0  # the mod says hello right after connecting
+# The screen size changes the speed even when the mod skips drawing the level (with lavapipe,
+# 640x360 -> 160x90 is ~20 % more steps/s); at 16x9 the game does not start
+HIDDEN_SCREEN = (160, 90)
+MIN_RENDER_RESOLUTION = (64, 36)
+GAME_FPS = 60  # logic frames per second of game time
+
+# Extra logic frames the mod runs per real frame with speedup and no render. A step is the same game
+# time with any value; past ~200 the exchange with Python (~0.6 ms per step) is the limit
+STATE_UPDATES = 200
+REMOVED_STATE_UPDATES = ("state_updates was removed: the engine sets it (speedup=True, the default, "
+                         "already runs as fast as the machine allows). Drop the argument.")
+
+
+def check_render_resolution(resolution) -> Tuple[int, int]:
+    try:
+        width, height = (int(n) for n in resolution)
+    except (TypeError, ValueError):
+        raise ValueError(f"render_resolution must be (width, height), got {resolution!r}") from None
+    if width < MIN_RENDER_RESOLUTION[0] or height < MIN_RENDER_RESOLUTION[1]:
+        raise ValueError(f"render_resolution must be at least 64x36, got {width}x{height}")
+    # the game keeps 16:9 and fills the rest of the screen with black bars
+    if abs(width * 9 - height * 16) > width * 9 / 100:
+        raise ValueError(f"render_resolution must be 16:9 (e.g. 320x180, 1280x720), got {width}x{height}")
+    return width, height
 
 
 class SpelunkyRLEngine(gym.Env):
@@ -41,6 +65,7 @@ class SpelunkyRLEngine(gym.Env):
             frames_per_step: int = 6,
             render_enabled: bool = False,
             render_mode: Optional[str] = None,
+            render_resolution: Tuple[int, int] = (640, 360),
             launcher: Union[str, Launcher] = "auto",
             renderer: str = "auto",
             launcher_options: Optional[Dict[str, Any]] = None,
@@ -52,21 +77,33 @@ class SpelunkyRLEngine(gym.Env):
             spelunky_dir: Optional[str] = None,
             **kwargs
         ) -> None:
-        """
+        """Starts the game (one instance per environment) and connects to it. Each parameter is
+        detailed in docs/getting-started.md (https://github.com/vicbentu/spelunky2rl/blob/main/docs/getting-started.md).
+
         Args:
             game_dir: Spelunky 2 folder (with Spel2.exe). Defaults to $SPELUNKY2RL_GAME_DIR.
-                `spelunky_dir` is the old name and still works.
-            launcher: "auto" (Docker), "docker", "wine", or a Launcher instance. The default can be
-                changed with $SPELUNKY2RL_LAUNCHER. Windows is not supported yet.
+            frames_per_step: game frames (1/60 s each) per step(); the action is held for all of them.
+            render_enabled: the same as render_mode="rgb_array".
+            render_mode: None, "rgb_array" (render() returns the frame of the last state) or
+                "rgb_array_list" (render() returns every frame since the last call, for video).
+            render_resolution: (width, height) of the frames, 16:9 and at least 64x36.
+            launcher: "auto" (Docker; $SPELUNKY2RL_LAUNCHER changes it), "docker", "wine" or a Launcher.
             renderer: "auto" (GPU if Docker can use one, else CPU), "gpu" or "cpu".
-            render_enabled / render_mode: capture frames for render(); render_mode="rgb_array"
-                (as passed by gymnasium.make) is the same as render_enabled=True.
             launcher_options: extra keyword arguments for the launcher, e.g. {"image": ...}.
-            **kwargs: default reset options (see _game_reset). An unknown one is a TypeError.
+            log_file: a file where every state is written, for debugging.
+            log_info: what log_file gets: "all", "map_info", "entity_count".
+            step_timeout: seconds to wait for the game in reset(), step() and render().
+            startup_timeout: seconds for the game to start and connect.
+            max_launch_attempts: launches before giving up if the game dies before connecting.
+            spelunky_dir: the old name of game_dir.
+            **kwargs: default reset options for every episode (see reset()). An unknown one is a
+                TypeError.
         """
 
         super().__init__()
 
+        if "state_updates" in kwargs:
+            raise TypeError(REMOVED_STATE_UPDATES)
         known = set(inspect.signature(self._game_reset).parameters) - {"seed"}
         unknown = sorted(set(kwargs) - known)
         if unknown:
@@ -79,10 +116,14 @@ class SpelunkyRLEngine(gym.Env):
         self.game_dir = game_dir or spelunky_dir
         self.frames_per_step = frames_per_step
         self.reset_options = getattr(self, "reset_options", {}) | kwargs
-        if render_mode not in (None, "rgb_array"):
-            raise ValueError(f"render_mode must be None or 'rgb_array', got {render_mode!r}")
-        self.render_enabled = render_enabled or render_mode == "rgb_array"
-        self.render_mode = "rgb_array" if self.render_enabled else None
+        if render_mode not in (None, *self.metadata["render_modes"]):
+            raise ValueError(f"render_mode must be None, 'rgb_array' or 'rgb_array_list', got {render_mode!r}")
+        self.render_mode = render_mode or ("rgb_array" if render_enabled else None)
+        self.render_enabled = self.render_mode is not None
+        self._frames: List[np.ndarray] = []  # with "rgb_array_list": the frames render() has not returned
+        if self.render_mode == "rgb_array":
+            # one frame per step: a video of them at this rate runs at the game's speed (RecordVideo)
+            self.metadata = {**self.metadata, "render_fps": GAME_FPS / frames_per_step}
         self.log_file = log_file
         self.log_info = log_info if log_info is not None else ["all"]
         self.step_timeout = step_timeout
@@ -92,7 +133,12 @@ class SpelunkyRLEngine(gym.Env):
         self.server = None
         self.frame_source: Optional[FrameSource] = None
 
+        self.render_resolution = check_render_resolution(render_resolution)
         self.launcher = make_launcher(launcher, self.game_dir, renderer=renderer, options=launcher_options)
+        self.launcher.screen = self.render_resolution if self.render_enabled else HIDDEN_SCREEN
+        self.launcher.capture = self.render_enabled
+        self.launcher.capture_frames = frames_per_step if self.render_mode == "rgb_array_list" else 1
+        self._drawn: Optional[int] = None  # frames drawn when the last state was sent
         self._game_init()
 
 
@@ -104,13 +150,34 @@ class SpelunkyRLEngine(gym.Env):
         options: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> Tuple[Dict, Dict[str, Any]]:
-        """`options` (the gymnasium way) and `**kwargs` are both reset options for this episode
-        (see _game_reset); an unknown one is a TypeError."""
+        """Starts a new episode on a new level. `seed` picks the level (random if None).
+
+        Reset options, for this episode: as keyword arguments or in `options` (the gymnasium way).
+        They override the ones given to __init__, which override the environment's defaults
+        (`reset_options`); an unknown one is a TypeError. Defaults in parentheses.
+
+            speedup (True): run as fast as the machine allows; False plays in real time (60 FPS).
+            ent_types_to_destroy (()): ENT_TYPE ids killed when the level starts.
+            manual_control (False): the agent's actions are ignored and the game reads the keyboard.
+            god_mode (False): the player cannot die.
+            hp (4), bombs (4), ropes (4), gold (0): the player's starting values.
+            world (1), level (1): where the episode starts.
+            theme (None): an Overlunky THEME id; None is the usual theme of world and level.
+            time_ghost (True): the ghost that appears after 3 minutes (it slows the game ~8x).
+            audio (False): the game's sound.
+        """
 
         super().reset(seed=seed)
-        self._game_reset(seed=seed, **(self.reset_options | (options or {}) | kwargs))
+        reset_options = self.reset_options | (options or {}) | kwargs
+        if "state_updates" in reset_options:
+            raise TypeError(REMOVED_STATE_UPDATES)
+        self._game_reset(seed=seed, **reset_options)
 
         header, data = self.server.receive()
+        self._drawn = header["drawn"]
+        if self.render_mode == "rgb_array_list":
+            # the frames of the level's start are not the episode's: only the state's
+            self._frames = [self.frame_source.get_frame(self._drawn)]
         self.layout = StateLayout(header["layout"])
         gamestate = self.layout.decode(data)
         self.last_gamestate = gamestate
@@ -131,7 +198,11 @@ class SpelunkyRLEngine(gym.Env):
             "frames": self.frames_per_step,
         })
 
-        _, data = self.server.receive()
+        header, data = self.server.receive()
+        if self.render_mode == "rgb_array_list":
+            # read now: the capture keeps only the frames of one step
+            self._frames += self.frame_source.get_frames(self._drawn + 1, header["drawn"])
+        self._drawn = header["drawn"]
         gamestate = self.layout.decode(data)
 
         info = {
@@ -189,7 +260,11 @@ class SpelunkyRLEngine(gym.Env):
         self.mod_version = hello.get("mod")
 
         if self.render_enabled:
-            self.frame_source = self.launcher.frame_source()
+            self.frame_source = self.launcher.frame_source(self.step_timeout)
+            if self.render_mode == "rgb_array_list" and not self.frame_source.counts_frames:
+                self.close()
+                raise ValueError(f"render_mode='rgb_array_list' needs the Docker launcher: "
+                                 f"{type(self.launcher).__name__} cannot tell the frames of a step apart")
 
     def _launch_and_accept(self, port: int) -> Connection:
         deadline = time.monotonic() + self.startup_timeout
@@ -217,8 +292,7 @@ class SpelunkyRLEngine(gym.Env):
     def _game_reset(
             self,
             seed:int = None,
-            speedup: bool = False,
-            state_updates: int = 0,
+            speedup: bool = True,
 
             ent_types_to_destroy = (),
             manual_control: bool = False,
@@ -239,7 +313,9 @@ class SpelunkyRLEngine(gym.Env):
         message = {
             "command": "reset",
             "speedup": speedup,
-            "state_updates": state_updates,
+            # extra logic frames per real frame only without render: with it the mod runs all of a
+            # step but the last frame itself, and the game draws that one
+            "state_updates": STATE_UPDATES if speedup and not self.render_enabled else 0,
             "seed": seed,
             "ent_types_to_destroy": list(ent_types_to_destroy),
             "fields": self.fields,
@@ -257,6 +333,8 @@ class SpelunkyRLEngine(gym.Env):
             "vsync": False,
             # skip drawing when nobody reads the frames
             "render": self.render_enabled,
+            # draw every frame of a step, not only the last one
+            "render_all": self.render_mode == "rgb_array_list",
         }
         # Lua picks the world's default theme; pass a THEME value to choose e.g. Volcana (3) or Temple (6)
         if theme is not None:
@@ -269,15 +347,22 @@ class SpelunkyRLEngine(gym.Env):
 
     ############ Render ############
 
-    metadata = {"render_modes": ["rgb_array"], "render_fps": 60}
+    # frames per second of what render() returns, so that a video of them runs at the game's speed:
+    # every frame with "rgb_array_list"; one per step with "rgb_array" (set in __init__)
+    metadata = {"render_modes": ["rgb_array", "rgb_array_list"], "render_fps": GAME_FPS}
 
-    def render(self, mode="rgb_array"):
-        if mode != "rgb_array":
-            raise NotImplementedError
+    def render(self):
+        """With render_mode="rgb_array", the frame of the last state as an (H, W, 3) uint8 RGB array;
+        with "rgb_array_list", the list of frames since the last call (or since reset(), whose frame
+        is the first)."""
         if self.frame_source is None:
-            raise RuntimeError("Use render_enabled=True on init to be able to record replays")
+            raise RuntimeError("render() needs render_mode='rgb_array' or 'rgb_array_list' on init")
+        if self.render_mode == "rgb_array_list":
+            frames, self._frames = self._frames, []
+            return frames
 
-        return self.frame_source.get_frame()
+        # the frame of the last state: with the Docker launcher the one drawn right before it was sent
+        return self.frame_source.get_frame(self._drawn)
 
 
 

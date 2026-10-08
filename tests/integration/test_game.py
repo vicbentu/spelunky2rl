@@ -4,6 +4,7 @@ SPELUNKY2RL_LAUNCHER picks the launcher (default: docker on Linux).
 """
 
 import math
+import os
 import subprocess
 import time
 
@@ -11,10 +12,9 @@ import gymnasium as gym
 import numpy as np
 import pytest
 
+from spelunky2rl.engine import core
 from spelunky2rl.envs.default_environment import SpelunkyEnv as DefaultEnv
 from spelunky2rl.envs.get_to_exit import SpelunkyEnv as GetToExit
-
-FAST = {"speedup": True, "state_updates": 50}
 
 
 def running_containers():
@@ -28,8 +28,26 @@ def own_containers(envs):
     return names & set(running_containers())
 
 
+def first_difference(a, b, path="state"):
+    if isinstance(a, dict):
+        for key in a.keys() | b.keys():
+            if key not in a or key not in b:
+                return f"{path}.{key} missing on one side"
+            difference = first_difference(a[key], b[key], f"{path}.{key}")
+            if difference:
+                return difference
+    elif not np.array_equal(np.asarray(a), np.asarray(b)):
+        return f"{path}: {a!r} != {b!r}"
+
+
+def needs_capture():
+    """render() with the Wine launcher grabs the screen with mss; Docker reads the capture layer."""
+    if os.environ.get("SPELUNKY2RL_LAUNCHER") == "wine":
+        needs_capture()
+
+
 def test_episode_and_cleanup():
-    env = DefaultEnv(**FAST)
+    env = DefaultEnv()
     try:
         assert env.mod_version
         obs, _ = env.reset(seed=3)
@@ -48,7 +66,7 @@ def test_episode_and_cleanup():
 def test_actions_move_the_player_and_are_deterministic():
     """The agent's input used to be ignored in ~40% of episodes (steal_input), which also made
     episodes non-reproducible."""
-    env = GetToExit(**FAST, god_mode=True)
+    env = GetToExit(god_mode=True)
 
     def episode(seed):
         env.reset(seed=seed)
@@ -68,7 +86,7 @@ def test_actions_move_the_player_and_are_deterministic():
 
 
 def test_same_seed_same_level():
-    env = GetToExit(**FAST)
+    env = GetToExit()
     try:
         firsts = []
         for _ in range(2):
@@ -80,11 +98,38 @@ def test_same_seed_same_level():
         env.close()
 
 
+def test_state_updates_do_not_change_the_game(monkeypatch):
+    """A step is the same game time with any state_updates: the extra frames run the agent's input
+    too (ON.PRE_UPDATE) and answer the same frame count, so the engine can pick N on its own."""
+    env = DefaultEnv(god_mode=True)
+    actions = np.random.default_rng(0).integers(0, env.action_space.nvec, size=(500, len(env.action_space.nvec)))
+
+    def trajectory(state_updates):
+        monkeypatch.setattr(core, "STATE_UPDATES", state_updates)
+        env.reset(seed=3)
+        states = [env.last_gamestate]
+        for action in actions:
+            env.step(action)
+            states.append(env.last_gamestate)
+        return states
+
+    try:
+        engine_value = core.STATE_UPDATES
+        slow, fast = trajectory(0), trajectory(engine_value)
+        xs = [state["basic_info"]["x"] for state in slow]
+        assert max(xs) - min(xs) > 0.5, "player did not move"
+        for step, (a, b) in enumerate(zip(slow, fast)):
+            difference = first_difference(a, b)
+            assert difference is None, f"step {step}: {difference}"
+    finally:
+        env.close()
+
+
 def test_dist_to_goal_follows_the_player_cell():
     """Between two steps dist_to_goal changes by at most the cells the player moved, with the same
     parity: same cell, same distance; next cell, one more or one less. The distance used to be
     read from the cell above (and often one to the left), where it froze against ceilings."""
-    env = GetToExit(**FAST, god_mode=True)
+    env = GetToExit(god_mode=True)
 
     def cell_and_distance():
         info = env.last_gamestate["basic_info"]
@@ -115,13 +160,13 @@ def test_reset_leaves_nothing_of_the_previous_level():
         env.reset(seed=seed)
         return env.last_gamestate["dist_to_goal"], env.last_gamestate["map_info"]
 
-    env = GetToExit(**FAST, god_mode=True)
+    env = GetToExit(god_mode=True)
     try:
         fresh = first_state(env, 29)
     finally:
         env.close()
 
-    env = GetToExit(**FAST, god_mode=True)
+    env = GetToExit(god_mode=True)
     try:
         env.reset(seed=28)
         for i in range(50):
@@ -143,7 +188,7 @@ def test_a_wider_view_holds_the_default_one():
             return {}
 
     def first_state(cls, seed):
-        env = cls(**FAST, god_mode=True)
+        env = cls(god_mode=True)
         try:
             env.reset(seed=seed)
             return env.last_gamestate
@@ -162,7 +207,7 @@ def test_reset_from_the_death_screen():
     """The death screen opens the journal, and a warp used to leave it open: the levels after it
     stayed paused (the clock stopped, the player did not move), or the reset never answered."""
     crouch, bomb, neutral, right = [1, 0, 0, 0, 0, 0, 0, 0], [1, 0, 0, 0, 1, 0, 0, 0], [1, 1, 0, 0, 0, 0, 0, 0], [2, 1, 0, 0, 0, 0, 0, 0]
-    env = DefaultEnv(**FAST, hp=1)
+    env = DefaultEnv(hp=1)
     try:
         for wait in (28, 35, 150):  # steps after dying: on the death screen, coming in, long on it
             env.reset(seed=0)
@@ -190,7 +235,7 @@ def test_reset_from_the_death_screen():
 @pytest.mark.parametrize("n", [4])
 def test_parallel_envs(n):
     before = set(running_containers())
-    envs = gym.vector.AsyncVectorEnv([lambda: GetToExit(**FAST) for _ in range(n)])
+    envs = gym.vector.AsyncVectorEnv([lambda: GetToExit() for _ in range(n)])
     try:
         envs.reset(seed=0)
         start = time.monotonic()
@@ -204,7 +249,7 @@ def test_parallel_envs(n):
 
 
 def test_render_returns_game_frames():
-    pytest.importorskip("mss")
+    needs_capture()
     env = GetToExit(render_enabled=True, god_mode=True)
     try:
         env.reset(seed=3)
@@ -214,5 +259,95 @@ def test_render_returns_game_frames():
         assert frame.dtype.name == "uint8" and frame.shape == (360, 640, 3)
         # a black frame means the game is not presenting (e.g. fullscreen under Xvfb)
         assert frame.mean() > 20
+    finally:
+        env.close()
+
+
+def test_render_resolution():
+    """The game fills a screen of any 16:9 size, with no black bars."""
+    needs_capture()
+    env = GetToExit(render_enabled=True, render_resolution=(320, 180), god_mode=True)
+    try:
+        env.reset(seed=3)
+        for _ in range(10):
+            env.step([2, 1, 0])
+        frame = env.render()
+        assert frame.shape == (180, 320, 3)
+        assert frame[:8].mean() > 20 and frame[-8:].mean() > 20
+    finally:
+        env.close()
+
+
+@pytest.mark.parametrize("render_mode", ["rgb_array", "rgb_array_list"])
+def test_render_does_not_change_the_game(render_mode):
+    """With render the mod runs all frames of a step but the last with update_state() (with
+    rgb_array_list it draws them all, one per turn of the game loop) and answers after drawing; the
+    game must be the same as without render."""
+    actions = np.random.default_rng(1).integers(0, DefaultEnv.action_space.nvec, size=(200, 8))
+
+    def trajectory(**kwargs):
+        env = DefaultEnv(god_mode=True, **kwargs)
+        try:
+            states = [env.reset(seed=3) and env.last_gamestate]
+            for action in actions:
+                env.step(action)
+                states.append(env.last_gamestate)
+            return states
+        finally:
+            env.close()
+
+    needs_capture()
+    plain, rendered = trajectory(), trajectory(render_mode=render_mode, render_resolution=(160, 90))
+    for step, (a, b) in enumerate(zip(plain, rendered)):
+        difference = first_difference(a, b)
+        assert difference is None, f"step {step}: {difference}"
+
+
+def test_render_returns_the_state_frame():
+    """The image is the state's: it changes with every step, stays the same until the next one, and
+    after a reset it is the new level's."""
+    needs_capture()
+    env = GetToExit(render_enabled=True, render_resolution=(320, 180), god_mode=True)
+    try:
+        env.reset(seed=3)
+        first = env.render()
+        frames = [first]
+        for _ in range(5):
+            env.step([2, 1, 0])
+            frames.append(env.render())
+            assert np.array_equal(frames[-1], env.render())
+        for before, after in zip(frames, frames[1:]):
+            assert not np.array_equal(before, after)
+        # the same level again: not the same pixels (animations), but far closer than another level's
+        env.reset(seed=5)
+        other = env.render()
+        env.reset(seed=3)
+        again = env.render()
+
+        def distance(a, b):
+            return np.abs(a.astype(int) - b).mean()
+
+        assert distance(again, first) < distance(again, other) / 4
+    finally:
+        env.close()
+
+
+def test_render_list_returns_every_frame():
+    """rgb_array_list: reset's frame, then the frames_per_step of each step, all different while the
+    player runs."""
+    needs_capture()
+    env = GetToExit(render_mode="rgb_array_list", frames_per_step=6, render_resolution=(320, 180), god_mode=True)
+    try:
+        env.reset(seed=3)
+        frames = env.render()
+        assert len(frames) == 1 and frames[0].shape == (180, 320, 3)
+        for _ in range(3):
+            env.step([2, 1, 0])
+        frames += env.render()
+        assert len(frames) == 1 + 3 * 6 and env.render() == []
+        assert all(not np.array_equal(a, b) for a, b in zip(frames, frames[1:]))
+        env.step([2, 1, 0])
+        env.reset(seed=5)
+        assert len(env.render()) == 1
     finally:
         env.close()

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import spelunky2rl
+from spelunky2rl.engine.core import STATE_UPDATES
 from spelunky2rl.envs.default_environment import SpelunkyEnv as DefaultEnv
 from spelunky2rl.envs.get_to_exit import SpelunkyEnv as GetToExit
 
@@ -49,6 +50,29 @@ def test_headless_defaults_reach_lua(make_env):
     assert env.fake_lua.messages[-1]["time_ghost"] is False
 
 
+@pytest.mark.parametrize("kwargs, state_updates, speedup", [
+    ({}, STATE_UPDATES, True),
+    ({"render_enabled": True}, 0, True),  # the mod runs the logic-only frames of each step itself
+    ({"speedup": False}, 0, False),
+])
+def test_the_engine_picks_state_updates(make_env, kwargs, state_updates, speedup):
+    env = make_env(DefaultEnv, **kwargs)
+    env.reset(seed=0)
+    message = env.fake_lua.messages[-1]
+    assert (message["state_updates"], message["speedup"]) == (state_updates, speedup)
+
+
+def test_state_updates_is_gone(make_env):
+    with pytest.raises(TypeError, match="state_updates was removed"):
+        make_env(DefaultEnv, state_updates=200)
+    env = make_env(DefaultEnv)
+    with pytest.raises(TypeError, match="state_updates was removed"):
+        env.reset(seed=0, state_updates=200)
+    with pytest.raises(TypeError, match="state_updates was removed"):
+        env.reset(seed=0, options={"state_updates": 200})
+    assert not env.fake_lua.messages
+
+
 def test_unknown_reset_option_is_rejected(make_env):
     """`bomb=3` (for `bombs`) used to be dropped in silence."""
     with pytest.raises(TypeError, match="bomb"):
@@ -59,6 +83,19 @@ def test_unknown_reset_option_is_rejected(make_env):
     with pytest.raises(TypeError, match="bomb"):
         env.reset(seed=0, options={"bomb": 3})
     assert not env.fake_lua.messages
+
+
+def test_screen_follows_render_resolution(make_env):
+    assert make_env(DefaultEnv, render_enabled=True).launcher.screen == (640, 360)
+    assert make_env(DefaultEnv, render_enabled=True, render_resolution=(1280, 720)).launcher.screen == (1280, 720)
+    # nobody reads the frames: a small screen is faster
+    assert make_env(DefaultEnv, render_resolution=(1280, 720)).launcher.screen == (160, 90)
+
+
+@pytest.mark.parametrize("resolution", [(400, 400), (32, 18), (640,), "640x360"])
+def test_bad_render_resolution_is_rejected(make_env, resolution):
+    with pytest.raises(ValueError, match="render_resolution"):
+        make_env(DefaultEnv, render_resolution=resolution)
 
 
 def test_fields_are_sent_on_reset_only(make_env):

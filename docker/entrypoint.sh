@@ -4,12 +4,18 @@
 #           DISPLAYNUM        X display for this instance's Xvfb (unique per host: --network host
 #                             shares X's abstract sockets between containers)
 #           RENDERER          "cpu" forces lavapipe; anything else lets Vulkan pick (GPU if passed in)
+#           SCREEN            WxH of the Xvfb screen, which the game fills (default 640x360)
+#           SPELUNKY2RL_CAPTURE_LAYER=1, SPELUNKY2RL_CAPTURE=<file>, SPELUNKY2RL_CAPTURE_SLOTS=<n>
+#                             optional, the Vulkan layer copies every presented frame to <file>,
+#                             which keeps the last <n> (default 1)
 #   mounts: /game (ro)        the user's Spelunky 2 folder
 #           /cache (rw)       optional, Playlunky's converted-assets cache shared between instances
 #           /opt/mod/lua      optional dev mount over the bundled Lua mod
+#           /capture (rw)     optional, where SPELUNKY2RL_CAPTURE points (with render)
 set -euo pipefail
 : "${PORT:?PORT is required}"
 DISPLAYNUM="${DISPLAYNUM:-99}"
+SCREEN="${SCREEN:-640x360}"
 [ -f /game/Spel2.exe ] || { echo "spelunky2rl: no Spel2.exe in /game; mount your Spelunky 2 folder there" >&2; exit 2; }
 
 # Per-instance game dir: symlinks to the read-only game, real files for what we provide or the game writes
@@ -27,9 +33,10 @@ A=/opt/assets
 ln -s "$A/steam_api64.dll" "$I/steam_api64.dll"
 echo 418530 > "$I/steam_appid.txt"
 mkdir -p "$I/steam_settings" && echo 418530 > "$I/steam_settings/steam_appid.txt"
-# local.cfg holds the video settings: a borderless window filling the Xvfb screen (fullscreen under
-# Wine+Xvfb leaves the Vulkan surface at 1x1 and every frame black; a framed window leaves a black
-# band where the title bar would be), no vsync, no audio
+# local.cfg holds the video settings: a borderless window filling the Xvfb screen and drawn at its
+# size whatever resolutionx/y say (fullscreen under Wine+Xvfb leaves the Vulkan surface at 1x1 and
+# every frame black; a framed window leaves a black band where the title bar would be), no vsync,
+# no audio
 cp "$A/config/playlunky.ini" "$A/config/local.cfg" "$I/"
 # Playlunky runs the pack's main.lua (patched to allow it, see docker/playlunky-patch.md) and writes
 # inside mod folders; the pack only holds lua/ so there is nothing for it to convert
@@ -42,7 +49,7 @@ if [ "${RENDERER:-auto}" = cpu ]; then
     LVP="$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)"
     export VK_DRIVER_FILES="$LVP" VK_ICD_FILENAMES="$LVP"
 fi
-Xvfb ":$DISPLAYNUM" -screen 0 640x360x24 -nolisten tcp >/dev/null 2>&1 &
+Xvfb ":$DISPLAYNUM" -screen 0 "${SCREEN}x24" -nolisten tcp >/dev/null 2>&1 &
 export DISPLAY=":$DISPLAYNUM" Spelunky_RL_Port="$PORT"
 echo "spelunky2rl: port=$PORT display=:$DISPLAYNUM vulkan=$(vulkaninfo --summary 2>/dev/null | grep -m1 deviceName | cut -d= -f2 | xargs)"
 

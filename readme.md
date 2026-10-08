@@ -23,7 +23,7 @@ The game runs headless in Docker on Linux, one container per environment (Window
 Either way you need your own copy of Spelunky 2 (Steam is only needed to download it).
 
 ```bash
-pip install spelunky2rl # add [render] for render()
+pip install spelunky2rl
 spelunky2rl pull      # Linux: the game runtime image (Wine, Playlunky; not the game), or build it
 spelunky2rl doctor    # checks Docker, GPU, the image and your game folder
 ```
@@ -48,6 +48,11 @@ for _ in range(1000):
 env.close()
 ```
 
+By default the game runs as fast as the machine allows (~1,600 steps/s per instance) and draws
+nothing. For images, pass `render_mode="rgb_array"` (`render()` returns the frame of each state, to
+train on pixels) or `render_mode="rgb_array_list"` (every frame, to record videos). Every option and
+what each costs: [Getting Started](https://github.com/vicbentu/spelunky2rl/blob/main/docs/getting-started.md#creating-an-environment).
+
 ## Available Environments
 
 - **`dummy_environment`** - Minimal test environment
@@ -68,7 +73,7 @@ Check `examples/` for complete examples:
 - **`manual_control.py`** - Test environment with keyboard controls
 - **`train_get_to_exit.py`** - Train an agent with RecurrentPPO
 - **`evaluate_model.py`** - Evaluate trained models
-- **`record_video.py`** - Record videos of agent gameplay
+- **`record_video.py`** - Record videos of agent gameplay (every frame, at 60 FPS)
 
 ## 🔮 Future Work
 

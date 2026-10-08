@@ -18,6 +18,16 @@ class Launcher:
     until the mod connects, and stop() on close. start() may be called again after stop() to retry.
     """
 
+    # (width, height) of the X screen the game draws on, read by start(); the engine sets it from
+    # render_resolution
+    screen = (640, 360)
+    # True when render() will read frames, set by the engine before start(): a launcher that can
+    # capture them frame by frame sets that up
+    capture = False
+    # How many of the last frames the capture keeps, set by the engine with capture: with
+    # render_mode="rgb_array_list" those of a whole step
+    capture_frames = 1
+
     def starting(self, timeout: float) -> "contextlib.AbstractContextManager[None]":
         """Held from before start() until the mod has connected."""
         return contextlib.nullcontext()
@@ -31,7 +41,9 @@ class Launcher:
     def stop(self) -> None:
         raise NotImplementedError
 
-    def frame_source(self) -> FrameSource:
+    def frame_source(self, timeout: float) -> FrameSource:
+        """Where render() reads frames from, once the game has connected. `timeout`: how long to wait
+        for one."""
         return NullFrameSource(f"{type(self).__name__} does not support render()")
 
     def diagnostics(self) -> str:
