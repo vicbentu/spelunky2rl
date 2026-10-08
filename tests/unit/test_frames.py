@@ -1,6 +1,7 @@
 """render()'s frames: the file the Vulkan layer writes (docker/vklayer/capture.c) and how the engine
 asks for the state's frame."""
 
+import os
 import threading
 import time
 
@@ -29,8 +30,10 @@ class FakeLayer:
         height, width = bgra.shape[:2]
         if SLOT_SIZE + bgra.nbytes > self.slot_size:  # the layer grows the file and drops the frames
             self.slot_size = SLOT_SIZE + bgra.nbytes
-            with open(self.path, "wb") as f:
-                f.truncate(HEADER_SIZE + self.slots * self.slot_size)
+            # as the layer: never empty the file first (O_TRUNC), the reader may have it mapped
+            fd = os.open(self.path, os.O_RDWR | os.O_CREAT)
+            os.ftruncate(fd, HEADER_SIZE + self.slots * self.slot_size)
+            os.close(fd)
         self.frame += 1
         slot = HEADER_SIZE + (self.frame - 1) % self.slots * self.slot_size
         with open(self.path, "r+b") as f:

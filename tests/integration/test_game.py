@@ -323,7 +323,10 @@ def test_render_returns_the_state_frame():
         other = env.render()
         env.reset(seed=3)
         again = env.render()
-        distance = lambda a, b: np.abs(a.astype(int) - b).mean()
+
+        def distance(a, b):
+            return np.abs(a.astype(int) - b).mean()
+
         assert distance(again, first) < distance(again, other) / 4
     finally:
         env.close()
