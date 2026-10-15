@@ -111,7 +111,8 @@ parameters; `gymnasium.make("spelunky2rl/...", ...)` passes them through.
 | `log_info` | list | `["all"]` | What `log_file` gets |
 | `step_timeout` | float | 60.0 | Seconds to wait for the game in `reset()`, `step()` and `render()` |
 | `startup_timeout` | float | 180.0 | Seconds for the game to start and connect |
-| `max_launch_attempts` | int | 3 | Launches before giving up if the game dies before connecting |
+| `restart_every` | int | 100000 | With images, after about this many steps start a new game in the background and switch to it at the next `reset()`; None: never. See [Long runs](#long-runs) |
+| `max_launch_attempts` | int | 3 | Launches before giving up if the game dies before connecting; also how many times in a row `reset()` starts again a game that stopped answering |
 | `spelunky_dir` | str | None | The old name of `game_dir` |
 
 Any reset option (next section) can be passed here too, as the default of every episode.
@@ -299,6 +300,28 @@ or more (threads times envs about the number of cores). With one env or large fr
 default: recording a video at 960x540 (`"rgb_array_list"`, one env) goes from 23 steps/s to 11 with
 `cpu_threads=4`. The GPU, where there is one, is still several times faster: 2,400 steps/s with 4
 envs at 128x72.
+
+### Long runs
+
+A game gets slower the longer it runs with images: its process grows by ~1 KB per frame drawn, and
+after ~100,000 steps its steps get slower and slower (without images neither happens). A new game is
+fast again. So with a `render_mode`, after about `restart_every` steps (100,000 by default, ±25 % so that games started together do not all restart
+at once) the environment starts a new game in the background, and the first `reset()` once it is up
+switches to it; the old one plays on until then and is closed after.
+
+5 games in lockstep, 128x72, ms per lockstep step (`benchmarks/throughput.py drift --envs 5`):
+
+| Steps per game | `restart_every=None` | `restart_every=100_000` |
+|---|---|---|
+| 10,000 | 2.72 | 2.58 |
+| 100,000 | 2.72 | 2.65 |
+| 200,000 | 2.95 | 2.66 |
+| 300,000 | 3.45 | 2.65 |
+| mean over 290,000 | 2.89 | 2.66 |
+
+While the new games start the steps are slower: ~5 s lost per restart of 5 games, ~2 % of the time
+between restarts, already counted in the mean. In long trainings the slowdown was bigger: 2.5-3.5 times slower steps
+after 1-2 million steps per game. `restart_every=None` keeps each game for good.
 
 ## Manual Control (Testing)
 

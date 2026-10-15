@@ -351,3 +351,33 @@ def test_render_list_returns_every_frame():
         assert len(env.render()) == 1
     finally:
         env.close()
+
+
+def test_restart_every_switches_to_a_new_game(monkeypatch):
+    """After restart_every steps a new game starts in the background while the old one plays on; the
+    next reset switches to it, render() still returns the state's frame, and the old game goes away."""
+    needs_capture()
+    monkeypatch.setattr(core, "RESTART_JITTER", 0)
+    env = GetToExit(render_enabled=True, render_resolution=(160, 90), god_mode=True, restart_every=20)
+    try:
+        env.reset(seed=3)
+        first = env.render()
+        containers = [env.launcher.container]
+        for _ in range(3):
+            for _ in range(20):
+                env.step([2, 1, 0])
+            deadline = time.monotonic() + 120
+            while not env._next_game.ready and time.monotonic() < deadline:
+                env.step([1, 1, 0])
+                env.render()
+            env.reset(seed=3)
+            containers.append(env.launcher.container)
+            # render() checks that the frame is the state's; the same level looks like it did
+            assert np.abs(env.render().astype(int) - first).mean() < 30
+            env.step([2, 1, 0])
+            env.render()
+        assert len(set(containers)) == 4
+        time.sleep(5)
+        assert not set(running_containers()) & set(containers[:-1])
+    finally:
+        env.close()

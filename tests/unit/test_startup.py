@@ -1,4 +1,5 @@
 import re
+import socket
 import threading
 import time
 from importlib.resources import files
@@ -55,6 +56,127 @@ def test_startup_timeout():
         SpelunkyEnv(launcher=launcher, startup_timeout=0.3)
     assert time.monotonic() - start < 3
     assert launcher.stops == 1
+
+
+def test_reset_restarts_a_game_that_does_not_answer(make_env):
+    from fake_lua import make_gamestate
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    launcher = FakeLauncher()
+    # the first game never answers its reset; the second one does
+    launcher.respond = lambda message, steps: None if launcher.starts == 1 else make_gamestate(rng)
+    env = make_env(SpelunkyEnv, launcher=launcher, step_timeout=0.3)
+    with pytest.warns(RuntimeWarning, match="stopped answering(.|\n)*fake launcher output"):
+        env.reset(seed=7)
+    assert (launcher.starts, launcher.stops) == (2, 1)
+    assert [m["seed"] for m in launcher.lua.messages if m["command"] == "reset"] == [7]
+    env.step(env.action_space.sample())
+
+
+def test_reset_restarts_a_game_that_died_in_a_step(make_env):
+    launcher = FakeLauncher()
+    env = make_env(SpelunkyEnv, launcher=launcher)
+    env.reset(seed=0)
+    launcher.lua.sock.shutdown(socket.SHUT_RDWR)  # the game is gone
+    with pytest.raises((ConnectionError, TimeoutError)):
+        env.step(env.action_space.sample())
+    with pytest.warns(RuntimeWarning, match="starting it again"):
+        env.reset(seed=1)
+    assert launcher.starts == 2
+    env.step(env.action_space.sample())
+
+
+def test_reset_gives_up_after_max_attempts(make_env):
+    launcher = FakeLauncher(respond=lambda message, steps: None)
+    env = make_env(SpelunkyEnv, launcher=launcher, step_timeout=0.2, max_launch_attempts=2)
+    with pytest.warns(RuntimeWarning), pytest.raises(TimeoutError):
+        env.reset(seed=0)
+    assert launcher.starts == 2
+
+
+@pytest.fixture
+def exact_restart(monkeypatch):
+    """restart_every without its ±25 %, so a test knows the step."""
+    monkeypatch.setattr(core, "RESTART_JITTER", 0)
+
+
+def test_restart_every_restarts_in_reset_without_a_second_launcher(make_env, exact_restart):
+    launcher = FakeLauncher()
+    env = make_env(SpelunkyEnv, launcher=launcher, restart_every=3, render_enabled=True)
+    env.reset(seed=0)
+    for _ in range(3):
+        env.step(env.action_space.sample())
+    assert launcher.starts == 1
+    env.reset(seed=1)
+    assert (launcher.starts, launcher.stops) == (2, 1)
+    assert [m["seed"] for m in launcher.lua.messages if m["command"] == "reset"] == [1]
+
+
+def test_restart_every_starts_the_next_game_in_the_background(make_env, exact_restart):
+    launcher = FakeLauncher(cloneable=True)
+    env = make_env(SpelunkyEnv, launcher=launcher, restart_every=3, render_enabled=True)
+    env.reset(seed=0)
+    for _ in range(3):
+        env.step(env.action_space.sample())
+    assert len(launcher.clones) == 1  # started at the 3rd step
+    deadline = time.monotonic() + 5
+    while not env._next_game.ready and time.monotonic() < deadline:
+        time.sleep(0.01)
+    env.step(env.action_space.sample())  # the old game plays on until the reset
+    env.reset(seed=1)
+    new = launcher.clones[0]
+    assert env.launcher is new and new.starts == 1
+    assert [m["seed"] for m in new.lua.messages if m["command"] == "reset"] == [1]
+    deadline = time.monotonic() + 5
+    while launcher.stops == 0 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert launcher.stops == 1 and launcher.lua.messages[-1]["command"] == "close"
+    env.step(env.action_space.sample())
+    assert env._steps_since_launch == 1
+
+
+def test_restart_every_waits_for_the_next_game_to_be_up(make_env, monkeypatch, exact_restart):
+    launcher = FakeLauncher(cloneable=True)
+    env = make_env(SpelunkyEnv, launcher=launcher, restart_every=1, render_enabled=True)
+    env.reset(seed=0)
+    started = threading.Event()
+    real_start = core.SpelunkyRLEngine._start_game
+
+    def slow_start(self, *args, **kwargs):
+        started.set()
+        time.sleep(0.5)
+        return real_start(self, *args, **kwargs)
+    monkeypatch.setattr(core.SpelunkyRLEngine, "_start_game", slow_start)
+    env.step(env.action_space.sample())
+    started.wait(5)
+    env.reset(seed=1)  # not up yet: the same game resets
+    assert env.launcher is launcher
+
+
+def test_close_stops_the_game_starting_in_the_background(make_env, exact_restart):
+    launcher = FakeLauncher(cloneable=True)
+    env = make_env(SpelunkyEnv, launcher=launcher, restart_every=1, render_enabled=True)
+    env.reset(seed=0)
+    env.step(env.action_space.sample())
+    env.close()
+    assert launcher.clones[0].stops >= 1
+
+
+def test_games_started_together_restart_apart(make_env):
+    thresholds = {make_env(SpelunkyEnv, restart_every=1000, render_enabled=True)._restart_at for _ in range(8)}
+    assert len(thresholds) > 1 and all(750 <= t <= 1250 for t in thresholds)
+    assert make_env(SpelunkyEnv, restart_every=None, render_enabled=True)._restart_at is None
+
+
+def test_without_images_games_are_not_restarted(make_env):
+    """Only a game drawing frames slows down: without images restart_every does nothing."""
+    assert make_env(SpelunkyEnv, restart_every=1000)._restart_at is None
+
+
+def test_restart_every_must_be_a_positive_int():
+    with pytest.raises(ValueError, match="restart_every"):
+        SpelunkyEnv(launcher=FakeLauncher(), restart_every=0)
 
 
 def test_close_stops_the_launcher(make_env):

@@ -94,3 +94,29 @@ el juego iría más lento que sin límite; no lo he medido fuera del mundo 1 a 1
 
 Para cambiarlo: `gpu_memory_mb=None` (sin límite) o otro número al crear el entorno; el valor por
 defecto está en `SpelunkyRLEngine.__init__` (`engine/core.py`).
+
+### restart-every-default · [2026-10-16 01:25 @8051c4f] `restart_every` es 100.000 por defecto: cada juego se cambia por uno nuevo cada ~100k pasos
+
+Un juego con render se ralentiza cuanto más corre: 5 juegos en lockstep pasan de 2,72 a 3,45 ms por
+paso en 300k pasos por juego (`benchmarks/throughput.py drift`), casi nada en los primeros 100k; en
+004/005 los pasos acabaron 2-3,5 veces más lentos tras 1-2M pasos por juego. Con
+`restart_every=100_000` el mismo lockstep se queda en 2,5-2,7 ms: media de 2,66 ms frente a 2,89 en
+290k pasos, contando los ~5 s que se pierden mientras arrancan los juegos nuevos (~2 % del tiempo).
+
+Elegí 100.000 por defecto, con ±25 % por juego para que no arranquen todos a la vez.
+
+Descartado:
+- Sin reinicio por defecto (opt-in): nada cambia para quien no lo pida, pero cualquier
+  entrenamiento largo se ralentiza sin que nadie sepa por qué, que es lo que pasó en 004-007.
+- 200.000 o más: la mitad de arranques, pero la deriva ya es de un +8 % a los 200k y crece rápido.
+- Reiniciar en el propio `reset()` (sin arrancar en segundo plano): más simple, pero en lockstep
+  cada reinicio para a todos los juegos ~10-25 s.
+
+Solo con render: sin imágenes no hay fuga ni deriva medidas, y a ~1.600 pasos/s por juego se
+reiniciaría cada minuto.
+
+Coste si me equivoco: cada ~100k pasos por juego hay un contenedor más durante unos segundos (CPU
+del arranque, ~0,35 GB de VRAM y ~1 GB de RAM).
+
+Para cambiarlo: `restart_every=None` (nunca) u otro número al crear el entorno; el valor por defecto
+está en `SpelunkyRLEngine.__init__` (`engine/core.py`).

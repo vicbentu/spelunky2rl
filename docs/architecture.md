@@ -99,16 +99,27 @@ def __init__(self, game_dir=None, launcher="auto", renderer="auto", **kwargs):
     self._game_init()
 ```
 
-`_game_init()`:
+`_game_init()` listens on `127.0.0.1` on a random free port and starts the game there
+(`_start_game()`):
 
-1. Listens on `127.0.0.1` on a random free port.
-2. Inside `launcher.starting()` (which holds the Playlunky cache lock on a first start):
+1. Inside `launcher.starting()` (which holds the Playlunky cache lock on a first start):
    `launcher.start(port)`, then accepts the connection while polling `launcher.is_running()`.
    If the game dies before connecting it is relaunched, up to `max_launch_attempts`, all within
    `startup_timeout`. Errors include the launcher's recent output.
-3. Reads the mod's hello and checks the protocol version (`engine/protocol.py`).
-4. With a `render_mode`, asks the launcher for a frame source; `"rgb_array_list"` needs one that
+2. Reads the mod's hello and checks the protocol version (`engine/protocol.py`).
+3. With a `render_mode`, asks the launcher for a frame source; `"rgb_array_list"` needs one that
    counts frames (`counts_frames`, only `VulkanFrameSource`), else it is a `ValueError`.
+
+The same `_start_game()` replaces the game later:
+
+- `reset()` restarts in place a game that does not answer (`_restart_game()`, see Process Crashes).
+- With `restart_every`, after about that many steps (drawn per game within ±25 %, `RESTART_JITTER`,
+  so that games started together restart apart) `NextGame` runs `_start_game()` in a thread with a
+  second launcher (`launcher.clone()`) on a second port, while the current game keeps playing. The
+  first `reset()` once it is up switches connection, frame source and launcher to the new game and
+  retires the old one: it sends it `close` and stops its launcher in the background. A launcher
+  without `clone()` restarts in place at that reset instead. If the new game fails to start, the old
+  one goes on and the next try comes after another `restart_every` steps.
 
 ### Launchers (engine/launchers/)
 
@@ -694,7 +705,11 @@ after `step_timeout` seconds instead of blocking forever.
 ### Process Crashes
 
 During startup the game is relaunched up to `max_launch_attempts` times. After startup a crashed
-game shows up as a `ConnectionError` on the next step; create a new environment to continue.
+game shows up as a `ConnectionError` on the next step. `reset()` starts the game again when it does
+not answer (`TimeoutError`, e.g. a first reset stuck while many games start at once) or is gone
+(`ConnectionError`, also after a failed step), with a `RuntimeWarning` that carries the launcher's
+output, and sends the reset to the new game, up to `max_launch_attempts` times in a row. An error the
+mod reports (`RuntimeError`) is not retried: it would happen again.
 
 ## Logging
 
