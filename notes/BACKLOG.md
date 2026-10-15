@@ -176,3 +176,13 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   `perf record -g` del `Spel2.exe` (necesita root: aquí `perf_event_paranoid=4`) para ver si son shaders de
   pantalla completa, muchas capas o algo fijo de DXVK. Scripts y medidas en `~/Desktop/tmp/spelunky/cpu_threads/`
   (`bench.py`, `results.jsonl`, `threads.py`).
+- [2026-10-16 00:39 @8051c4f] En la GPU pasa lo mismo que en lavapipe: con 15-20 juegos a 128x72 los pasos/s se
+  quedan en ~3.300 con la GPU al 91-94 % (`benchmarks/throughput.py scale`), ~0,27 ms de GPU por
+  frame, ya con 5 juegos. Es el siguiente límite tras la VRAM. Mirar con `DXVK_HUD` o Nsight qué
+  pases dibuja el juego por frame (¿iluminación o render targets a tamaño fijo?) y si 640x360 cuesta
+  lo mismo en GPU (en lavapipe casi: 252 frente a 179 pasos/s).
+- [2026-10-16 00:39 @8051c4f] Por paso con render, en el mod: el callback `ON.RENDER_POST_HUD` que cuenta los frames
+  cuesta ~0,15 ms (un juego en GPU: 1,0 → 0,79 ms por paso sin él y sin la capa de captura), y los dos
+  `RENDER_PRE_*` que solo hacen falta sin render ~0,05 ms. Contar en `ON.POST_GAME_LOOP` (sin contexto
+  de render) da un frame de más al arrancar (la captura va uno por detrás): averiguar en qué vuelta
+  del bucle no se presenta y si se puede compensar, y registrar los `RENDER_PRE_*` solo sin render.
