@@ -40,6 +40,14 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
     juego (Spel2.exe vivo pero sin responder) o la muerte de Spel2.exe a mitad (ver la idea de los
     arranques que mueren).
 
+- [2026-10-13 15:09 @e791351] `DockerLauncher` deja directorios `spelunky2rl-capture-*` en `/dev/shm` cuando el proceso
+  muere sin llegar a `stop()` (workers `daemon` de un entrenamiento matado): el 2026-10-13 había 15, de
+  los que solo 7 eran de contenedores vivos (los más viejos del 2026-10-09). Cada uno guarda un frame
+  por slot (2 MB × 6 a 960x540 con `rgb_array_list`) en RAM hasta reiniciar. Ideas: borrarlo desde el
+  propio contenedor al salir (`entrypoint.sh`, trap), o limpiar al arrancar los que no monte ningún
+  contenedor vivo. Creación y borrado en `engine/launchers/docker.py` (`mkdtemp` en `start`,
+  `rmtree` en `stop`).
+
 ## Improvements
 
 - [2026-09-28 12:53 @abf1a96] Comprobar la versión de `Spel2.exe` al arrancar y fallar con un mensaje
@@ -76,6 +84,11 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   `SPELUNKY2RL_CAPTURE_LAYER=1` y `SPELUNKY2RL_CAPTURE` (un directorio en `/dev/shm` por instancia,
   borrado en `stop()`) con `capture`, y `frame_source` devuelve `VulkanFrameSource`, como
   `DockerLauncher`. El mod ya lo hace todo.
+- [2026-10-15 12:17 @e791351] From "cpu_threads": `WineLauncher` pone `LP_NUM_THREADS` en el entorno del juego
+  (`start()` en `engine/launchers/wine.py`) pero nunca se ha corrido con el juego bajo Wine, y no hay test
+  unitario porque `start()` lanza Xvfb. Con Docker se verificó contando los hilos `llvmpipe-*` de `Spel2.exe`
+  (`/proc/<pid>/task/*/comm`): 24 sin el parámetro, 2 con `cpu_threads=2`. Repetir con `launcher="wine"` y
+  `renderer="cpu"` con `~/Desktop/tmp/spelunky/cpu_threads/e2e.py` (añadirle `launcher="wine"`).
 
 ## Ideas
 
@@ -126,3 +139,25 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   Playlunky compitiendo con el arranque? medido cuando también se inyectaba Overlunky); el backtrace de winedbg no llega a la salida del
   contenedor, probar con `WINEDEBUG=+seh`. Scripts en `~/Desktop/tmp/spelunky/connreset/` (`stress.py`
   N_WORKERS N_ARRANQUES, `capture_plugin.py` guarda la salida de cada contenedor, `crashes.sh`).
+- [2026-10-08 12:12 @e791351] Al ver por primera vez un objeto, enemigo, etc. el juego desbloquea su entrada del diario y
+  muestra un aviso en pantalla. Con observaciones de píxeles (`render()`) ese aviso tapa parte de la vista y
+  ensucia lo que ve el agente; además, depende de la partida guardada, así que el mismo nivel no se ve
+  igual entre ejecuciones o máquinas. Idea: una opción (o el comportamiento por defecto) para empezar con
+  el diario entero desbloqueado, o para suprimir el aviso desde el mod. Mirar qué permite la API de
+  scripts de Playlunky (escribir el progreso del diario en la partida guardada, o desactivar/ocultar el
+  aviso cada frame, como ya hace `control.lua` con `game_manager.journal_ui.state`) y si tener todo
+  desbloqueado cambia algo más del juego.
+- [2026-10-15 12:17 @e791351] Con lavapipe un frame de 128x72 cuesta ~13,6 ms de CPU con `cpu_threads=1` (2,9 ms de espera con
+  los 24 hilos por defecto, pero ~25 ms de CPU repartidos: 6,2 cores para ~250 frames/s); es casi todo el paso
+  (el juego y el intercambio con Python ~1 ms). Demasiado para tan pocos píxeles, pero no es la resolución
+  interna: `resolution_scale=50` en `local.cfg` apenas cambia nada (266 frente a 252 pasos/s, y la imagen se
+  emborrona), quitar el HUD tampoco (259), y `vfx=0` o `1` son más lentos que el `2` actual (156). Hilos del
+  proceso: casi todo `llvmpipe-*`; `dxvk-*` y el hilo del juego, poco. Siguiente paso: un perfil con
+  `perf record -g` del `Spel2.exe` (necesita root: aquí `perf_event_paranoid=4`) para ver si son shaders de
+  pantalla completa, muchas capas o algo fijo de DXVK. Scripts y medidas en `~/Desktop/tmp/spelunky/cpu_threads/`
+  (`bench.py`, `results.jsonl`, `threads.py`).
+- [2026-10-15 12:17 @e791351] Con `renderer="gpu"` cada instancia ocupa 1,78 GB de VRAM medidos a 128x72 (la doc dice ~1,75 GiB a
+  cualquier resolución). Es lo que limita cuántos envs con GPU caben junto a un modelo: en la RTX 3060 de 12 GB, 4
+  envs (2.400 pasos/s a 128x72, 5 veces más que con CPU) más los 5,2 GB de DreamerV3 no caben. Mirar qué
+  reserva esa memoria (¿texturas del juego, pools de DXVK?) y si `dxgi.maxDeviceMemory` u otras opciones de
+  `dxvk.conf` la bajan sin perder velocidad.

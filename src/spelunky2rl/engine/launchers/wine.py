@@ -9,8 +9,8 @@ from typing import Optional
 
 from ..assemble import assemble_instance
 from ..frames import FrameSource
-from .base import (PORT_ENV, Launcher, PlaylunkyCache, cache_root, check_game_dir, find_game_process,
-                   game_version_hash, terminate)
+from .base import (PORT_ENV, Launcher, PlaylunkyCache, cache_root, check_cpu_threads, check_game_dir,
+                   find_game_process, game_version_hash, terminate)
 
 WINESERVER_FALLBACK = "/usr/lib/x86_64-linux-gnu/wine/wineserver"  # Ubuntu does not put it on PATH
 
@@ -31,9 +31,10 @@ class WineLauncher(Launcher):
     """
 
     def __init__(self, game_dir, wine_home=None, renderer: str = "auto", dev_mod: Optional[str] = None,
-                 wine: str = "wine"):
+                 wine: str = "wine", cpu_threads: Optional[int] = None):
         if renderer not in ("auto", "gpu", "cpu"):
             raise ValueError(f"renderer must be 'auto', 'gpu' or 'cpu', got {renderer!r}")
+        self.cpu_threads = check_cpu_threads(cpu_threads)
         self.game_dir = check_game_dir(game_dir)
         self.home = Path(wine_home or os.environ.get("SPELUNKY2RL_WINE_HOME") or default_wine_home())
         for needed in ("playlunky/playlunky_launcher.exe", "playlunky/PATCHED", "steam_api64.dll", "prefix"):
@@ -109,6 +110,9 @@ class WineLauncher(Launcher):
             if not lavapipe:
                 raise FileNotFoundError("renderer='cpu' needs Mesa's lavapipe (Ubuntu: apt install mesa-vulkan-drivers)")
             env["VK_DRIVER_FILES"] = env["VK_ICD_FILENAMES"] = str(lavapipe[0])
+        if self.cpu_threads is not None:
+            # lavapipe's drawing threads; "auto" may draw with it too, and a GPU driver ignores it
+            env["LP_NUM_THREADS"] = str(self.cpu_threads)
         exe_dir = "Z:" + str(game).replace("/", "\\")
         playlunky = self.home / "playlunky"
         self._launcher = subprocess.Popen([self.wine, str(playlunky / "playlunky_launcher.exe"),

@@ -51,6 +51,15 @@ class Launcher:
         return ""
 
 
+def check_cpu_threads(cpu_threads) -> Optional[int]:
+    """None (lavapipe's default, a thread per core) or a positive number of drawing threads."""
+    if cpu_threads is None:
+        return None
+    if isinstance(cpu_threads, bool) or not isinstance(cpu_threads, int) or cpu_threads < 1:
+        raise ValueError(f"cpu_threads must be None or a positive int, got {cpu_threads!r}")
+    return cpu_threads
+
+
 def check_game_dir(game_dir) -> Path:
     game_dir = Path(game_dir).expanduser().resolve()
     if not (game_dir / "Spel2.exe").is_file():

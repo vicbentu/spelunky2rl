@@ -13,7 +13,7 @@ from typing import List, Optional
 
 from ...version import __version__
 from ..frames import FrameSource
-from .base import Launcher, PlaylunkyCache, cache_root, check_game_dir, game_version_hash
+from .base import Launcher, PlaylunkyCache, cache_root, check_cpu_threads, check_game_dir, game_version_hash
 
 DEFAULT_IMAGE = f"ghcr.io/vicbentu/spelunky2rl-game:{__version__}"
 RENDERERS = ("auto", "gpu", "cpu")
@@ -66,9 +66,11 @@ class DockerLauncher(Launcher):
 
     def __init__(self, game_dir, image: Optional[str] = None, renderer: str = "auto",
                  dev_mod: Optional[str] = None, cache_dir: Optional[str] = None,
-                 docker: str = "docker", extra_args: Optional[List[str]] = None):
+                 docker: str = "docker", extra_args: Optional[List[str]] = None,
+                 cpu_threads: Optional[int] = None):
         if renderer not in RENDERERS:
             raise ValueError(f"renderer must be one of {RENDERERS}, got {renderer!r}")
+        self.cpu_threads = check_cpu_threads(cpu_threads)
         self.game_dir = check_game_dir(game_dir)
         self.image = image or os.environ.get("SPELUNKY2RL_IMAGE") or DEFAULT_IMAGE
         self.renderer = renderer
@@ -109,6 +111,8 @@ class DockerLauncher(Launcher):
                "-v", f"{self.cache.path}:/cache"]
         if self.use_gpu:
             cmd += ["--gpus", "all", "-e", "NVIDIA_DRIVER_CAPABILITIES=all"]
+        elif self.cpu_threads is not None:
+            cmd += ["-e", f"LP_NUM_THREADS={self.cpu_threads}"]  # lavapipe's drawing threads
         if self.dev_mod is not None:
             cmd += ["-v", f"{self.dev_mod}:/opt/mod/lua:ro"]
         if self.capture_dir is not None:

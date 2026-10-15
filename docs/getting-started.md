@@ -104,6 +104,7 @@ parameters; `gymnasium.make("spelunky2rl/...", ...)` passes them through.
 | `render_resolution` | (int, int) | (640, 360) | Size of the frames, 16:9 and at least 64x36; the game draws at this size |
 | `launcher` | str or `Launcher` | "auto" | `"docker"` (the default on Linux; `$SPELUNKY2RL_LAUNCHER` changes it) or `"wine"` |
 | `renderer` | str | "auto" | `"gpu"`, `"cpu"` (Mesa's lavapipe) or `"auto"` (GPU if Docker can use one) |
+| `cpu_threads` | int | None | Threads drawing each frame on the CPU; None is one per core. See [Drawing on the CPU](#drawing-on-the-cpu) |
 | `launcher_options` | dict | None | Extra arguments for the launcher, e.g. `{"image": "..."}` for Docker |
 | `log_file` | str | None | Write every state to this file, see [Logging](#logging) |
 | `log_info` | list | `["all"]` | What `log_file` gets |
@@ -246,6 +247,31 @@ renderer each instance takes ~1.75 GiB of VRAM, with or without images and at an
 the card's VRAM they keep working, spilling to system memory. Synchronous vector envs (Gymnasium's
 `AsyncVectorEnv`, SB3's `SubprocVecEnv`) wait for the slowest env every step; with them 16 envs gave
 ~3,000 steps/s in total. Asynchronous collection (one process per env) scales better.
+
+### Drawing on the CPU
+
+On the CPU (`renderer="cpu"`, or `"auto"` without a GPU) each game draws its frames with as many
+threads as the machine has cores. That gets one frame out soonest, which is what one env needs; with
+several envs their threads fight over the cores and spend more of them coordinating than drawing.
+`cpu_threads` caps them per env. Only the CPU renderer reads it.
+
+Steps/s in total with images (`"rgb_array"`, `render()` after every step), Ryzen 9 7900X (24 threads):
+
+| `render_resolution` | Envs | `cpu_threads=None` | `cpu_threads=4` | `cpu_threads=2` |
+|---|---|---|---|---|
+| 128x72 | 1 | 252 | 189 | 123 |
+| 128x72 | 4 | 469 | 530 | 384 |
+| 128x72 | 8 | 581 | 707 | 637 |
+| 128x72 | 16 | 681 | 796 | 808 |
+| 640x360 | 1 | 179 | 101 | 58 |
+| 640x360 | 4 | 271 | 267 | 185 |
+| 640x360 | 8 | 305 | 342 | 297 |
+
+Fewer threads pay off with several envs and small frames: try `cpu_threads=4`, and 2 with 16 envs
+or more (threads times envs about the number of cores). With one env or large frames keep the
+default: recording a video at 960x540 (`"rgb_array_list"`, one env) goes from 23 steps/s to 11 with
+`cpu_threads=4`. The GPU, where there is one, is still several times faster: 2,400 steps/s with 4
+envs at 128x72.
 
 ## Manual Control (Testing)
 

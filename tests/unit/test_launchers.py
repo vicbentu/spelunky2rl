@@ -77,6 +77,28 @@ def test_docker_gpu_and_dev_mod(game_dir, tmp_path, monkeypatch):
     assert "--gpus" not in cpu and "RENDERER=cpu" in cpu
 
 
+def test_cpu_threads_reach_lavapipe(game_dir, tmp_path, monkeypatch):
+    from spelunky2rl.engine.launchers import make_launcher
+
+    monkeypatch.setattr(docker_launcher, "docker_has_nvidia", lambda docker="docker": False)
+    default = DockerLauncher(game_dir, cache_dir=tmp_path / "c", renderer="cpu").command(1)
+    assert not any(arg.startswith("LP_NUM_THREADS") for arg in default)
+    cpu = make_launcher("docker", str(game_dir), renderer="cpu", cpu_threads=4,
+                        options={"cache_dir": tmp_path / "c"}).command(1)
+    assert cpu[cpu.index("LP_NUM_THREADS=4") - 1] == "-e"
+    # "auto" without a GPU draws on the CPU too
+    assert "LP_NUM_THREADS=2" in DockerLauncher(game_dir, cache_dir=tmp_path / "c", cpu_threads=2).command(1)
+    monkeypatch.setattr(docker_launcher, "docker_has_nvidia", lambda docker="docker": True)
+    gpu = DockerLauncher(game_dir, cache_dir=tmp_path / "c", cpu_threads=4).command(1)
+    assert not any(arg.startswith("LP_NUM_THREADS") for arg in gpu)
+
+
+@pytest.mark.parametrize("bad", [0, -1, 2.5, "4", True])
+def test_cpu_threads_must_be_a_positive_int(game_dir, tmp_path, no_gpu, bad):
+    with pytest.raises(ValueError, match="cpu_threads"):
+        DockerLauncher(game_dir, cache_dir=tmp_path / "c", cpu_threads=bad)
+
+
 def test_gpu_renderer_needs_a_gpu(game_dir, tmp_path, no_gpu):
     with pytest.raises(RuntimeError, match="renderer='gpu'"):
         DockerLauncher(game_dir, cache_dir=tmp_path / "c", renderer="gpu")

@@ -8,7 +8,7 @@ LAUNCHERS = ("docker", "wine")
 
 
 def make_launcher(launcher: Union[str, Launcher], game_dir: Optional[str], renderer: str = "auto",
-                  options: Optional[dict] = None) -> Launcher:
+                  options: Optional[dict] = None, cpu_threads: Optional[int] = None) -> Launcher:
     """Build the launcher named by `launcher` ("auto", "docker", "wine"), or pass an instance through."""
     if isinstance(launcher, Launcher):
         return launcher
@@ -25,11 +25,11 @@ def make_launcher(launcher: Union[str, Launcher], game_dir: Optional[str], rende
     if name == "docker":
         from .docker import DockerLauncher
 
-        return DockerLauncher(game_dir, renderer=renderer, **options)
+        return DockerLauncher(game_dir, renderer=renderer, cpu_threads=cpu_threads, **options)
     if name == "wine":
         from .wine import WineLauncher
 
-        return WineLauncher(game_dir, renderer=renderer, **options)
+        return WineLauncher(game_dir, renderer=renderer, cpu_threads=cpu_threads, **options)
     raise ValueError(f"launcher must be 'auto', one of {LAUNCHERS}, or a Launcher instance; got {launcher!r}")
 
 

@@ -68,6 +68,7 @@ class SpelunkyRLEngine(gym.Env):
             render_resolution: Tuple[int, int] = (640, 360),
             launcher: Union[str, Launcher] = "auto",
             renderer: str = "auto",
+            cpu_threads: Optional[int] = None,
             launcher_options: Optional[Dict[str, Any]] = None,
             log_file: str = None,
             log_info: Optional[List[str]] = None,
@@ -89,6 +90,8 @@ class SpelunkyRLEngine(gym.Env):
             render_resolution: (width, height) of the frames, 16:9 and at least 64x36.
             launcher: "auto" (Docker; $SPELUNKY2RL_LAUNCHER changes it), "docker", "wine" or a Launcher.
             renderer: "auto" (GPU if Docker can use one, else CPU), "gpu" or "cpu".
+            cpu_threads: threads drawing each frame when the game draws on the CPU; None, one per
+                core. Fewer can be faster with several envs and small frames.
             launcher_options: extra keyword arguments for the launcher, e.g. {"image": ...}.
             log_file: a file where every state is written, for debugging.
             log_info: what log_file gets: "all", "map_info", "entity_count".
@@ -134,7 +137,8 @@ class SpelunkyRLEngine(gym.Env):
         self.frame_source: Optional[FrameSource] = None
 
         self.render_resolution = check_render_resolution(render_resolution)
-        self.launcher = make_launcher(launcher, self.game_dir, renderer=renderer, options=launcher_options)
+        self.launcher = make_launcher(launcher, self.game_dir, renderer=renderer, options=launcher_options,
+                                      cpu_threads=cpu_threads)
         self.launcher.screen = self.render_resolution if self.render_enabled else HIDDEN_SCREEN
         self.launcher.capture = self.render_enabled
         self.launcher.capture_frames = frames_per_step if self.render_mode == "rgb_array_list" else 1
