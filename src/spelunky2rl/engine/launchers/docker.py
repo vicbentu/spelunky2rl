@@ -145,8 +145,9 @@ class DockerLauncher(Launcher):
         threading.Thread(target=self._drain, args=(self._process,), daemon=True).start()
 
     def _drain(self, process) -> None:
-        for line in process.stdout:
-            self._output.append(line.rstrip())
+        with process.stdout:
+            for line in process.stdout:
+                self._output.append(line.rstrip())
 
     def is_running(self) -> bool:
         return self._process is not None and self._process.poll() is None
