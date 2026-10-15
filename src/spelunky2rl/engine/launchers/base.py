@@ -60,6 +60,15 @@ def check_cpu_threads(cpu_threads) -> Optional[int]:
     return cpu_threads
 
 
+def check_gpu_memory_mb(gpu_memory_mb) -> Optional[int]:
+    """None (no cap: every texture stays in VRAM) or a positive number of megabytes."""
+    if gpu_memory_mb is None:
+        return None
+    if isinstance(gpu_memory_mb, bool) or not isinstance(gpu_memory_mb, int) or gpu_memory_mb < 1:
+        raise ValueError(f"gpu_memory_mb must be None or a positive int, got {gpu_memory_mb!r}")
+    return gpu_memory_mb
+
+
 def check_game_dir(game_dir) -> Path:
     game_dir = Path(game_dir).expanduser().resolve()
     if not (game_dir / "Spel2.exe").is_file():

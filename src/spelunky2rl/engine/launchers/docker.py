@@ -13,7 +13,8 @@ from typing import List, Optional
 
 from ...version import __version__
 from ..frames import FrameSource
-from .base import Launcher, PlaylunkyCache, cache_root, check_cpu_threads, check_game_dir, game_version_hash
+from .base import (Launcher, PlaylunkyCache, cache_root, check_cpu_threads, check_game_dir, check_gpu_memory_mb,
+                   game_version_hash)
 
 DEFAULT_IMAGE = f"ghcr.io/vicbentu/spelunky2rl-game:{__version__}"
 RENDERERS = ("auto", "gpu", "cpu")
@@ -67,10 +68,11 @@ class DockerLauncher(Launcher):
     def __init__(self, game_dir, image: Optional[str] = None, renderer: str = "auto",
                  dev_mod: Optional[str] = None, cache_dir: Optional[str] = None,
                  docker: str = "docker", extra_args: Optional[List[str]] = None,
-                 cpu_threads: Optional[int] = None):
+                 cpu_threads: Optional[int] = None, gpu_memory_mb: Optional[int] = None):
         if renderer not in RENDERERS:
             raise ValueError(f"renderer must be one of {RENDERERS}, got {renderer!r}")
         self.cpu_threads = check_cpu_threads(cpu_threads)
+        self.gpu_memory_mb = check_gpu_memory_mb(gpu_memory_mb)
         self.game_dir = check_game_dir(game_dir)
         self.image = image or os.environ.get("SPELUNKY2RL_IMAGE") or DEFAULT_IMAGE
         self.renderer = renderer
@@ -111,6 +113,9 @@ class DockerLauncher(Launcher):
                "-v", f"{self.cache.path}:/cache"]
         if self.use_gpu:
             cmd += ["--gpus", "all", "-e", "NVIDIA_DRIVER_CAPABILITIES=all"]
+            if self.gpu_memory_mb is not None:
+                # DXVK keeps the game within it: textures not drawn lately move to system RAM
+                cmd += ["-e", f"DXVK_CONFIG=dxvk.maxMemoryBudget={self.gpu_memory_mb}"]
         elif self.cpu_threads is not None:
             cmd += ["-e", f"LP_NUM_THREADS={self.cpu_threads}"]  # lavapipe's drawing threads
         if self.dev_mod is not None:

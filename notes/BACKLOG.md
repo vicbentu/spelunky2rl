@@ -156,8 +156,3 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   `perf record -g` del `Spel2.exe` (necesita root: aquí `perf_event_paranoid=4`) para ver si son shaders de
   pantalla completa, muchas capas o algo fijo de DXVK. Scripts y medidas en `~/Desktop/tmp/spelunky/cpu_threads/`
   (`bench.py`, `results.jsonl`, `threads.py`).
-- [2026-10-15 12:17 @e791351] Con `renderer="gpu"` cada instancia ocupa 1,78 GB de VRAM medidos a 128x72 (la doc dice ~1,75 GiB a
-  cualquier resolución). Es lo que limita cuántos envs con GPU caben junto a un modelo: en la RTX 3060 de 12 GB, 4
-  envs (2.400 pasos/s a 128x72, 5 veces más que con CPU) más los 5,2 GB de DreamerV3 no caben. Mirar qué
-  reserva esa memoria (¿texturas del juego, pools de DXVK?) y si `dxgi.maxDeviceMemory` u otras opciones de
-  `dxvk.conf` la bajan sin perder velocidad.

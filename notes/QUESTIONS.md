@@ -72,3 +72,25 @@ no se actualiza.
 
 Para cambiarlo: borrar las tres líneas `if self.render_mode == "rgb_array": self.metadata = …` en
 `SpelunkyRLEngine.__init__` (`engine/core.py`) y `test_render_fps_is_that_of_what_render_returns`.
+
+### gpu-memory-default · [2026-10-16 00:39 @9243864] `gpu_memory_mb` es 512 por defecto: cada juego en GPU usa ~0,35 GB de VRAM
+
+Cada juego cargaba en VRAM todas las texturas (~1,6 GiB sin comprimir), 1,73-1,78 GB por juego. Una
+RTX 3060 de 12 GB admitía 6 juegos, o 3 junto a un DreamerV3 de 5,2 GB. Con dos entrenamientos de 5
+juegos el CUDA que arranca después se quedaba sin VRAM (el error de cuBLAS). Con
+`DXVK_CONFIG=dxvk.maxMemoryBudget=512` cada juego ocupa 0,31-0,38 GB (de 1 a 20 juegos) y da un 1-3 %
+menos de pasos/s (5 juegos: 2.714 frente a 2.751; 10: 3.351 frente a 3.456, juegos libres).
+
+Elegí 512 por defecto, también para quien no sepa que existe.
+
+Descartado:
+- Sin límite (lo de antes): ese 1-3 % de velocidad, a cambio de que cualquier CUDA que arranque
+  después de los juegos se quede sin VRAM.
+- Un presupuesto menor (256): no lo medí. Un nivel del mundo 1 dibuja ~270 MB de texturas; por debajo
+  de eso DXVK movería texturas a la VRAM y de vuelta en cada frame.
+
+Coste si me equivoco: en un mundo que dibuje más de 512 MB de texturas, o a resoluciones grandes,
+el juego iría más lento que sin límite; no lo he medido fuera del mundo 1 a 128x72.
+
+Para cambiarlo: `gpu_memory_mb=None` (sin límite) o otro número al crear el entorno; el valor por
+defecto está en `SpelunkyRLEngine.__init__` (`engine/core.py`).

@@ -105,6 +105,7 @@ parameters; `gymnasium.make("spelunky2rl/...", ...)` passes them through.
 | `launcher` | str or `Launcher` | "auto" | `"docker"` (the default on Linux; `$SPELUNKY2RL_LAUNCHER` changes it) or `"wine"` |
 | `renderer` | str | "auto" | `"gpu"`, `"cpu"` (Mesa's lavapipe) or `"auto"` (GPU if Docker can use one) |
 | `cpu_threads` | int | None | Threads drawing each frame on the CPU; None is one per core. See [Drawing on the CPU](#drawing-on-the-cpu) |
+| `gpu_memory_mb` | int | 512 | VRAM each game may use when it draws on the GPU; None for no limit. See [Many games on one GPU](#many-games-on-one-gpu) |
 | `launcher_options` | dict | None | Extra arguments for the launcher, e.g. `{"image": "..."}` for Docker |
 | `log_file` | str | None | Write every state to this file, see [Logging](#logging) |
 | `log_info` | list | `["all"]` | What `log_file` gets |
@@ -243,10 +244,36 @@ the CPU more instances add little, and with every frame drawn 4 instances fill t
 its 12 GiB of VRAM).
 
 Without images each instance keeps about one core busy, and so does its Python process. With the GPU
-renderer each instance takes ~1.75 GiB of VRAM, with or without images and at any resolution; past
-the card's VRAM they keep working, spilling to system memory. Synchronous vector envs (Gymnasium's
-`AsyncVectorEnv`, SB3's `SubprocVecEnv`) wait for the slowest env every step; with them 16 envs gave
-~3,000 steps/s in total. Asynchronous collection (one process per env) scales better.
+renderer each instance keeps its VRAM within `gpu_memory_mb` (see below). Synchronous vector envs
+(Gymnasium's `AsyncVectorEnv`, SB3's `SubprocVecEnv`) wait for the slowest env every step; with them
+16 envs gave ~3,000 steps/s in total. Asynchronous collection (one process per env) scales better.
+
+### Many games on one GPU
+
+Spelunky 2 loads all its textures, ~1.6 GiB uncompressed, into VRAM at startup, though a level draws
+a small part of them. `gpu_memory_mb` (512 by default) caps the VRAM each game uses: DXVK moves the
+textures it has not drawn lately to system RAM. Each game then takes ~0.35 GiB instead of ~1.75, at
+about the same speed (1-3 % fewer steps/s with 5 and 10 games), which leaves room for a model on the
+same card. `gpu_memory_mb=None` lifts the cap;
+past the card's VRAM the games still run, spilling to system memory, but a CUDA process that starts
+after them can find none left.
+
+Steps/s in total, `benchmarks/throughput.py scale --envs 1 5 10 15 20`: frames of 128x72 as the
+observation (`render()` after every step), random actions, Ryzen 9 7900X (24 threads), RTX 3060
+(12 GiB). *Free*: every game steps on its own; *lockstep*: every game steps and then the next step
+starts, as in a synchronous vector env (an ended episode resets inside the step).
+
+| Games | Free | Lockstep | VRAM per game | CPU cores per game |
+|---|---|---|---|---|
+| 1 | 645 | 597 | 0.38 GiB | 0.9 |
+| 5 | 2,630 | 1,740 | 0.36 GiB | 1.2 |
+| 10 | 3,150 | 1,870 | 0.35 GiB | 1.2 |
+| 15 | 3,340 | 1,990 | 0.33 GiB | 1.1 |
+| 20 | 3,330 | 1,890 | 0.31 GiB | 0.9 |
+
+Past ~10 games the GPU is the limit (90 % busy). With one game the GPU barely works and the driver
+lowers its clocks, so a step takes about twice as long as with a few games. In lockstep every game
+waits for the slowest one and for every reset each step: about 40 % fewer steps than free.
 
 ### Drawing on the CPU
 

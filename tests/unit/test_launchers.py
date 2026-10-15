@@ -99,6 +99,25 @@ def test_cpu_threads_must_be_a_positive_int(game_dir, tmp_path, no_gpu, bad):
         DockerLauncher(game_dir, cache_dir=tmp_path / "c", cpu_threads=bad)
 
 
+def test_gpu_memory_caps_dxvk(game_dir, tmp_path, monkeypatch):
+    from spelunky2rl.engine.launchers import make_launcher
+
+    monkeypatch.setattr(docker_launcher, "docker_has_nvidia", lambda docker="docker": True)
+    capped = make_launcher("docker", str(game_dir), gpu_memory_mb=512, options={"cache_dir": tmp_path / "c"}).command(1)
+    assert capped[capped.index("DXVK_CONFIG=dxvk.maxMemoryBudget=512") - 1] == "-e"
+    uncapped = DockerLauncher(game_dir, cache_dir=tmp_path / "c").command(1)
+    assert not any(arg.startswith("DXVK_CONFIG") for arg in uncapped)
+    # on the CPU there is no VRAM to cap
+    cpu = DockerLauncher(game_dir, cache_dir=tmp_path / "c", renderer="cpu", gpu_memory_mb=512).command(1)
+    assert not any(arg.startswith("DXVK_CONFIG") for arg in cpu)
+
+
+@pytest.mark.parametrize("bad", [0, -1, 2.5, "512", True])
+def test_gpu_memory_must_be_a_positive_int(game_dir, tmp_path, no_gpu, bad):
+    with pytest.raises(ValueError, match="gpu_memory_mb"):
+        DockerLauncher(game_dir, cache_dir=tmp_path / "c", gpu_memory_mb=bad)
+
+
 def test_gpu_renderer_needs_a_gpu(game_dir, tmp_path, no_gpu):
     with pytest.raises(RuntimeError, match="renderer='gpu'"):
         DockerLauncher(game_dir, cache_dir=tmp_path / "c", renderer="gpu")
