@@ -89,8 +89,17 @@ Descartado:
 - Un presupuesto menor (256): no lo medí. Un nivel del mundo 1 dibuja ~270 MB de texturas; por debajo
   de eso DXVK movería texturas a la VRAM y de vuelta en cada frame.
 
-Coste si me equivoco: en un mundo que dibuje más de 512 MB de texturas, o a resoluciones grandes,
-el juego iría más lento que sin límite; no lo he medido fuera del mundo 1 a 128x72.
+Medido después, con la GPU libre: 5 juegos libres, 40 s por mundo con acciones al azar y god mode
+(`vram_tail.py` en el scratchpad de la sesión del 2026-10-16). Con 512 frente a sin límite:
+- A 128x72, en los 7 mundos, de un 5 % menos de pasos/s a un 3 % más según el mundo, un 1,7 % menos
+  de media. El que más pierde es el 6: 1.359 frente a 1.435. Con 1024, un 0,9 % menos de media.
+- A 640x360 (mundos 1, 4 y 6), lo mismo que sin límite, ±2 %.
+- El p99 y el p99,9 del paso son iguales. Los pasos de más de 20 ms son algo más frecuentes con el
+  tope, pero siempre menos del 0,03 % (en el mundo 4, 7 frente a 2 de ~43.000). Los resets, iguales.
+- Cada juego usa 0,30-0,50 GB (hasta 506 MB en el mundo 6); con 1024, 0,56-1,0 GB; sin límite,
+  1,74-1,78.
+
+Coste si me equivoco: hasta un 5 % de pasos/s en algunos mundos a 128x72.
 
 Para cambiarlo: `gpu_memory_mb=None` (sin límite) o otro número al crear el entorno; el valor por
 defecto está en `SpelunkyRLEngine.__init__` (`engine/core.py`).

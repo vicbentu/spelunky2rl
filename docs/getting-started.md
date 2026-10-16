@@ -252,9 +252,10 @@ renderer each instance keeps its VRAM within `gpu_memory_mb` (see below). Synchr
 
 Spelunky 2 loads all its textures, ~1.6 GiB uncompressed, into VRAM at startup, though a level draws
 a small part of them. `gpu_memory_mb` (512 by default) caps the VRAM each game uses: DXVK moves the
-textures it has not drawn lately to system RAM. Each game then takes ~0.35 GiB instead of ~1.75, at
-about the same speed (1-3 % fewer steps/s with 5 and 10 games), which leaves room for a model on the
-same card. `gpu_memory_mb=None` lifts the cap;
+textures it has not drawn lately to system RAM. Each game then takes 0.3-0.5 GiB instead of ~1.75,
+at about the same speed (5 games at 128x72: from 5 % fewer steps/s to 3 % more depending on the
+world, 2 % fewer on average over the 7 worlds; the same at 640x360), which leaves room for a model
+on the same card. `gpu_memory_mb=None` lifts the cap;
 past the card's VRAM the games still run, spilling to system memory, but a CUDA process that starts
 after them can find none left.
 
