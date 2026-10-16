@@ -113,10 +113,9 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   el motor las deja en `info["timing"]` y el benchmark las suma. La capa de captura puede escribir
   sus tiempos (`clock_gettime(CLOCK_MONOTONIC)`, comparables con los de Python) en los 32 bytes libres
   de la cabecera de cada slot (`capture.c`, `SLOT_SIZE`).
-- [2026-10-16 02:07 @1ef894b] From "Rendimiento": `WineLauncher` tiene `gpu_memory_mb` (pone `DXVK_CONFIG`) y `clone()`
-  (para `restart_every`), solo probados con tests unitarios; con Docker se verificaron con el juego.
-  Correr con `launcher="wine"` y GPU `tests/integration/test_game.py::test_restart_every_switches_to_a_new_game`
-  y mirar la VRAM por juego con `nvidia-smi --query-compute-apps`.
+- [2026-10-16 02:07 @1ef894b] From "Rendimiento": `WineLauncher` tiene `gpu_memory_mb` (pone `DXVK_CONFIG`), solo
+  probado con tests unitarios; con Docker se verificó con el juego. Correr con `launcher="wine"` y GPU y
+  mirar la VRAM por juego con `nvidia-smi --query-compute-apps`.
 
 ## Ideas
 

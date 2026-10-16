@@ -1,6 +1,5 @@
 import collections
 import contextlib
-import copy
 import functools
 import json
 import os
@@ -171,11 +170,4 @@ class DockerLauncher(Launcher):
 
     def diagnostics(self) -> str:
         return "\n".join(self._output)
-
-    def clone(self) -> "DockerLauncher":
-        twin = copy.copy(self)
-        twin.container = twin.display = twin.capture_dir = twin._process = None
-        twin._starts = 0
-        twin._output = collections.deque(maxlen=50)
-        return twin
 

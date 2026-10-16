@@ -1,5 +1,4 @@
 import contextlib
-import copy
 import os
 import shutil
 import subprocess
@@ -160,12 +159,6 @@ class WineLauncher(Launcher):
         if self._slot_lock is not None:
             self._slot_lock.close()
         self._game = self._launcher = self._xvfb = self._instance_dir = self._slot_lock = None
-
-    def clone(self) -> "WineLauncher":
-        twin = copy.copy(self)
-        twin.port = twin.display = twin._slot = twin._slot_lock = twin._instance_dir = None
-        twin._xvfb = twin._launcher = twin._game = None
-        return twin
 
     def frame_source(self, timeout: float) -> FrameSource:
         # the capture layer is only in the Docker image: the latest frame on screen, maybe an older one

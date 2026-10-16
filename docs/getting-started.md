@@ -111,7 +111,6 @@ parameters; `gymnasium.make("spelunky2rl/...", ...)` passes them through.
 | `log_info` | list | `["all"]` | What `log_file` gets |
 | `step_timeout` | float | 60.0 | Seconds to wait for the game in `reset()`, `step()` and `render()` |
 | `startup_timeout` | float | 180.0 | Seconds for the game to start and connect |
-| `restart_every` | int | 100000 | With images, after about this many steps start a new game in the background and switch to it at the next `reset()`; None: never. See [Long runs](#long-runs) |
 | `max_launch_attempts` | int | 3 | Launches before giving up if the game dies before connecting; also how many times in a row `reset()` starts again a game that stopped answering |
 | `spelunky_dir` | str | None | The old name of `game_dir` |
 
@@ -310,25 +309,28 @@ envs at 128x72.
 
 ### Long runs
 
-A game gets slower the longer it runs with images: its process grows by ~1 KB per frame drawn, and
-after ~100,000 steps its steps get slower and slower (without images neither happens). A new game is
-fast again. So with a `render_mode`, after about `restart_every` steps (100,000 by default, ±25 % so that games started together do not all restart
-at once) the environment starts a new game in the background, and the first `reset()` once it is up
-switches to it; the old one plays on until then and is closed after.
+A game keeps its speed over a long run. 5 games in lockstep with images, 128x72: ms per lockstep step
+and memory of each game (`RssAnon` of `Spel2.exe`), from `benchmarks/throughput.py drift --envs 5`.
+Next to them, at the same time on the same machine (which is why a step takes ~4 ms here instead of
+~2.7), 5 games of the same image with Wine's `msvcp140`, as up to 0.1.3 (see below):
 
-5 games in lockstep, 128x72, ms per lockstep step (`benchmarks/throughput.py drift --envs 5`):
+| Steps per game | ms | Memory | ms, as up to 0.1.3 | Memory, as up to 0.1.3 |
+|---|---|---|---|---|
+| 10,000 | 4.12 | 885 MiB | 4.05 | 891 MiB |
+| 100,000 | 4.20 | 893 MiB | 4.38 | 999 MiB |
+| 300,000 | 4.10 | 911 MiB | 5.19 | 1,244 MiB |
+| 500,000 | 4.04 | 912 MiB | 6.31 | 1,469 MiB |
+| 660,000 | 3.93 | 936 MiB | | |
 
-| Steps per game | `restart_every=None` | `restart_every=100_000` |
-|---|---|---|
-| 10,000 | 2.72 | 2.58 |
-| 100,000 | 2.72 | 2.65 |
-| 200,000 | 2.95 | 2.66 |
-| 300,000 | 3.45 | 2.65 |
-| mean over 290,000 | 2.89 | 2.66 |
+On the CPU renderer the steps stay flat too (3 games in lockstep, `cpu_threads=4`: 10.0 ms per step
+at 10,000 steps per game and 9.9 at 410,000; as up to 0.1.3, 10.0 and 11.2), but each game's memory
+still grows ~0.57 KB a step: lavapipe loses a small buffer every frame, ~0.6 GB per million steps
+per game.
 
-While the new games start the steps are slower: ~5 s lost per restart of 5 games, ~2 % of the time
-between restarts, already counted in the mean. In long trainings the slowdown was bigger: 2.5-3.5 times slower steps
-after 1-2 million steps per game. `restart_every=None` keeps each game for good.
+Up to 0.1.3 the game ran with Wine's `msvcp140`, which leaks on every frame (see
+[architecture](architecture.md#launchers-enginelaunchers)): its memory grew ~1.2 KB a step and its
+steps got slower and slower, 2.5-3.5 times slower after 1-2 million steps per game in long
+trainings. If you set up `launcher="wine"` with an older `scripts/setup_wine.sh`, run it again.
 
 ## Manual Control (Testing)
 

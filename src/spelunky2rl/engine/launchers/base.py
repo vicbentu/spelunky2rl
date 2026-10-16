@@ -50,11 +50,6 @@ class Launcher:
         """Recent launcher output, appended to startup errors."""
         return ""
 
-    def clone(self) -> "Launcher":
-        """A launcher like this one with no game of its own, to start a second instance while this
-        one runs (the engine's restart_every). Raise NotImplementedError if that is not possible."""
-        raise NotImplementedError
-
 
 def check_cpu_threads(cpu_threads) -> Optional[int]:
     """None (lavapipe's default, a thread per core) or a positive number of drawing threads."""

@@ -90,7 +90,7 @@ class Timers:
         self.attach(env)
 
     def attach(self, env) -> None:
-        """Time the game's connection and frames; again when restart_every switched to a new game."""
+        """Time the game's connection and frames; again when reset() started a new game in its place."""
         if env.server is self.server:
             return
         self.server = env.server
@@ -130,7 +130,7 @@ def worker(index: int, args, conn) -> None:
     rng = np.random.default_rng(index)
     try:
         start = time.perf_counter()
-        kwargs = {"restart_every": args.restart_every}
+        kwargs = {}
         if args.gpu_memory_mb is not None:
             kwargs["gpu_memory_mb"] = None if args.gpu_memory_mb == 0 else args.gpu_memory_mb
         env = make_env(args.renderer_now, args.resolution, args.cpu_threads, args.container_env, args.image, **kwargs)
@@ -173,7 +173,7 @@ def worker(index: int, args, conn) -> None:
                 conn.send(timers.take())
             elif cmd == "take":
                 stats = timers.take()
-                if env.launcher.container != container:  # restart_every switched to a new game
+                if env.launcher.container != container:  # reset() replaced a game that stopped answering
                     container = env.launcher.container
                     pid = game_pid(container)
                 stats.update(container=container, pid=pid)
@@ -193,7 +193,7 @@ class Sampler:
         self.follow(containers, pids)
 
     def follow(self, containers: List[str], pids: List[Optional[int]]) -> None:
-        """The games now running (restart_every replaces them)."""
+        """The games now running (reset() replaces one that stops answering)."""
         if containers != self.containers:
             self.cgroups = []
             for name in containers:
@@ -466,7 +466,6 @@ def main(argv=None) -> None:
                        help="an environment variable for every game's container, e.g. DXVK_CONFIG=...")
         s.add_argument("--gpu-memory-mb", type=int, default=None,
                        help="VRAM per game (default: the library's; 0: no limit)")
-        s.add_argument("--restart-every", type=int, default=None, help="the engine's restart_every")
         s.add_argument("--image", default=None, help="the game image (default: the one of this package)")
         s.add_argument("--level-seed", type=int, default=1036, help="every episode plays this level")
         s.add_argument("--episode-steps", type=int, default=0,

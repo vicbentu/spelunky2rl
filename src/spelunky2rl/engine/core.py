@@ -1,8 +1,6 @@
 import atexit
 import inspect
-import random
 import socket
-import threading
 import time
 import warnings
 from collections import Counter
@@ -28,8 +26,6 @@ GAME_FPS = 60  # logic frames per second of game time
 # Extra logic frames the mod runs per real frame with speedup and no render. A step is the same game
 # time with any value; past ~200 the exchange with Python (~0.6 ms per step) is the limit
 STATE_UPDATES = 200
-# restart_every is drawn per game within ±this fraction: games started together restart apart
-RESTART_JITTER = 0.25
 REMOVED_STATE_UPDATES = ("state_updates was removed: the engine sets it (speedup=True, the default, "
                          "already runs as fast as the machine allows). Drop the argument.")
 
@@ -45,70 +41,6 @@ def check_render_resolution(resolution) -> Tuple[int, int]:
     if abs(width * 9 - height * 16) > width * 9 / 100:
         raise ValueError(f"render_resolution must be 16:9 (e.g. 320x180, 1280x720), got {width}x{height}")
     return width, height
-
-
-def listening_socket() -> socket.socket:
-    """A socket on a free port of 127.0.0.1 where a game's mod will connect."""
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind(('127.0.0.1', 0))
-    server_socket.listen(1)
-    server_socket.settimeout(0.05)
-    return server_socket
-
-
-def retire_game(server: Connection, server_socket: socket.socket, frame_source: Optional[FrameSource],
-                launcher: Launcher) -> None:
-    """Close a game that has been replaced. Its mod exits when the connection closes; stopping the
-    launcher (which cleans up after it) can take seconds, so it runs in the background."""
-    try:
-        server.send({"command": "close"})
-    except OSError:
-        pass
-    server.close()
-    server_socket.close()
-    if frame_source is not None:
-        frame_source.close()
-    threading.Thread(target=launcher.stop, daemon=True).start()
-
-
-class CancelledStart(Exception):
-    """close() came while a game was starting in the background."""
-
-
-class NextGame:
-    """A game started in a background thread to replace the engine's current one (restart_every)."""
-
-    UNSUPPORTED = object()  # the launcher cannot run a second instance: restart in reset() instead
-
-    def __init__(self, engine: "SpelunkyRLEngine", launcher: Launcher):
-        self.launcher = launcher
-        self.server_socket = listening_socket()
-        self.result = None
-        self.error: Optional[BaseException] = None
-        self._cancel = threading.Event()
-        self._thread = threading.Thread(target=self._run, args=(engine,), daemon=True)
-        self._thread.start()
-
-    def _run(self, engine: "SpelunkyRLEngine") -> None:
-        try:
-            self.result = engine._start_game(self.launcher, self.server_socket, self._cancel)
-        except BaseException as error:
-            self.error = error
-
-    @property
-    def ready(self) -> bool:
-        return not self._thread.is_alive()
-
-    def discard(self) -> None:
-        """Stop it, whether it is still starting, up, or failed."""
-        self._cancel.set()
-        self._thread.join(timeout=5)
-        if self.result is not None:
-            server, _, frame_source = self.result
-            retire_game(server, self.server_socket, frame_source, self.launcher)
-        else:
-            self.server_socket.close()
-            self.launcher.stop()
 
 
 class SpelunkyRLEngine(gym.Env):
@@ -145,7 +77,6 @@ class SpelunkyRLEngine(gym.Env):
             step_timeout: float = 60.0,
             startup_timeout: float = 180.0,
             max_launch_attempts: int = 3,
-            restart_every: Optional[int] = 100_000,
             spelunky_dir: Optional[str] = None,
             **kwargs
         ) -> None:
@@ -172,9 +103,6 @@ class SpelunkyRLEngine(gym.Env):
             startup_timeout: seconds for the game to start and connect.
             max_launch_attempts: launches before giving up if the game dies before connecting; also
                 how many times in a row reset() starts again a game that stopped answering.
-            restart_every: with images, after about this many steps (±25 %), start a new game in the
-                background; the first reset() once it is up switches to it. A game drawing frames gets
-                slower the longer it runs. None: never.
             spelunky_dir: the old name of game_dir.
             **kwargs: default reset options for every episode (see reset()). An unknown one is a
                 TypeError.
@@ -209,12 +137,6 @@ class SpelunkyRLEngine(gym.Env):
         self.step_timeout = step_timeout
         self.startup_timeout = startup_timeout
         self.max_launch_attempts = max_launch_attempts
-        if restart_every is not None and (isinstance(restart_every, bool) or not isinstance(restart_every, int)
-                                          or restart_every < 1):
-            raise ValueError(f"restart_every must be None or a positive int, got {restart_every!r}")
-        self.restart_every = restart_every
-        self._next_game = None  # restart_every: a NextGame, NextGame.UNSUPPORTED, or None
-        self._launched()
         self._closed = False
         self.server = None
         self.frame_source: Optional[FrameSource] = None
@@ -260,8 +182,6 @@ class SpelunkyRLEngine(gym.Env):
             raise TypeError(REMOVED_STATE_UPDATES)
         if seed is None:
             seed = int(self.np_random.integers(0, 2**32))
-        if self._next_game is NextGame.UNSUPPORTED or (self._next_game is not None and self._next_game.ready):
-            self._switch_to_next_game()
 
         # A game that stopped answering (hung, or gone: after a failed step() too) is started again
         # and the reset sent to the new one, up to max_launch_attempts times
@@ -320,9 +240,6 @@ class SpelunkyRLEngine(gym.Env):
         self.last_gamestate = gamestate
         observation = self.gamestate_to_observation(gamestate)
 
-        self._steps_since_launch += 1
-        if self._restart_at is not None and self._steps_since_launch >= self._restart_at and self._next_game is None:
-            self._start_next_game()
         return observation, reward, done, truncated, info
 
 
@@ -347,16 +264,16 @@ class SpelunkyRLEngine(gym.Env):
             self.frame_source.close()
         if getattr(self, "launcher", None) is not None:
             self.launcher.stop()
-        if getattr(self, "_next_game", None) is not None:
-            self._next_game.discard()
-            self._next_game = None
 
     def _game_init(self):
-        self.server_socket = listening_socket()
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.bind(('127.0.0.1', 0))
+        self.server_socket.listen(1)
+        self.server_socket.settimeout(0.05)
         atexit.register(self.close)
 
         try:
-            self.server, self.mod_version, self.frame_source = self._start_game(self.launcher, self.server_socket)
+            self.server, self.mod_version, self.frame_source = self._start_game()
         except BaseException:
             self.close()
             raise
@@ -365,95 +282,51 @@ class SpelunkyRLEngine(gym.Env):
             raise ValueError(f"render_mode='rgb_array_list' needs the Docker launcher: "
                              f"{type(self.launcher).__name__} cannot tell the frames of a step apart")
 
-    def _start_game(self, launcher: Launcher, server_socket: socket.socket,
-                    cancel: Optional[threading.Event] = None) -> Tuple[Connection, Optional[str], Optional[FrameSource]]:
-        """Launch a game that connects to `server_socket`, wait for its mod's hello and, with render,
-        open its frames: (connection, mod version, frame source)."""
-        with launcher.starting(self.startup_timeout):
-            server = self._launch_and_accept(launcher, server_socket, cancel)
+    def _start_game(self) -> Tuple[Connection, Optional[str], Optional[FrameSource]]:
+        """Launch the game, wait for its mod's hello and, with render, open its frames: (connection,
+        mod version, frame source)."""
+        with self.launcher.starting(self.startup_timeout):
+            server = self._launch_and_accept()
             try:
                 hello = check_hello(server.receive(timeout=HELLO_TIMEOUT)[0])
             except BaseException:
                 server.close()
                 raise
-        frame_source = launcher.frame_source(self.step_timeout) if self.render_enabled else None
+        frame_source = self.launcher.frame_source(self.step_timeout) if self.render_enabled else None
         return server, hello.get("mod"), frame_source
 
-    def _restart_game(self, error: Optional[BaseException]) -> None:
+    def _restart_game(self, error: BaseException) -> None:
         """Stop this game and start a new one in its place (for a reset: no state survives)."""
-        if error is not None:
-            warnings.warn(f"spelunky2rl: the game stopped answering ({error}); starting it again"
-                          + self._diagnostics(), RuntimeWarning, stacklevel=3)
+        warnings.warn(f"spelunky2rl: the game stopped answering ({error}); starting it again"
+                      + self._diagnostics(), RuntimeWarning, stacklevel=3)
         self.server.close()
         if self.frame_source is not None:
             self.frame_source.close()
         self.launcher.stop()
-        self.server, self.mod_version, self.frame_source = self._start_game(self.launcher, self.server_socket)
-        self._launched()
+        self.server, self.mod_version, self.frame_source = self._start_game()
 
-    def _launched(self) -> None:
-        """A game has just started (or its replacement failed): count its steps from zero."""
-        self._steps_since_launch = 0
-        self._restart_at = None
-        if self.restart_every is not None and self.render_enabled:  # without images it does not slow down
-            jitter = random.uniform(-RESTART_JITTER, RESTART_JITTER)
-            self._restart_at = max(1, round(self.restart_every * (1 + jitter)))
-
-    def _start_next_game(self) -> None:
-        """restart_every: start a new game in the background while this one keeps playing; reset()
-        switches to it once it is up. A launcher that cannot run a second instance restarts in reset()."""
-        try:
-            launcher = self.launcher.clone()
-        except NotImplementedError:
-            self._next_game = NextGame.UNSUPPORTED
-            return
-        self._next_game = NextGame(self, launcher)
-
-    def _switch_to_next_game(self) -> None:
-        """In reset(): the game started in advance, if it is up, replaces this one."""
-        next_game, self._next_game = self._next_game, None
-        if next_game is NextGame.UNSUPPORTED:
-            self._restart_game(None)
-            return
-        if next_game.error is not None:
-            warnings.warn(f"spelunky2rl: the new game started after {self.restart_every} steps failed "
-                          f"({next_game.error}); this one goes on" + self._diagnostics(next_game.launcher),
-                          RuntimeWarning, stacklevel=3)
-            next_game.discard()
-            self._launched()  # try again after as many steps
-            return
-        old = (self.server, self.server_socket, self.frame_source, self.launcher)
-        self.server, self.mod_version, self.frame_source = next_game.result
-        self.server_socket, self.launcher = next_game.server_socket, next_game.launcher
-        self._launched()
-        retire_game(*old)
-
-    def _launch_and_accept(self, launcher: Launcher, server_socket: socket.socket,
-                           cancel: Optional[threading.Event] = None) -> Connection:
+    def _launch_and_accept(self) -> Connection:
         deadline = time.monotonic() + self.startup_timeout
-        port = server_socket.getsockname()[1]
+        port = self.server_socket.getsockname()[1]
         for _ in range(self.max_launch_attempts):
-            launcher.start(port)
+            self.launcher.start(port)
             while True:
                 try:
-                    sock, _ = server_socket.accept()
+                    sock, _ = self.server_socket.accept()
                     return Connection(sock, self.step_timeout)
                 except socket.timeout:
                     pass
-                if cancel is not None and cancel.is_set():
-                    launcher.stop()
-                    raise CancelledStart()
                 if time.monotonic() > deadline:
                     raise TimeoutError(f"Spelunky 2 did not connect within {self.startup_timeout} s"
-                                       + self._diagnostics(launcher))
-                if not launcher.is_running():
+                                       + self._diagnostics())
+                if not self.launcher.is_running():
                     break
-            launcher.stop()
+            self.launcher.stop()
         raise RuntimeError(f"The game exited {self.max_launch_attempts} times before the mod connected"
-                           + self._diagnostics(launcher))
+                           + self._diagnostics())
 
-    def _diagnostics(self, launcher: Optional[Launcher] = None) -> str:
-        output = (launcher or self.launcher).diagnostics()
+    def _diagnostics(self) -> str:
+        output = self.launcher.diagnostics()
         return f"\nLauncher output:\n{output}" if output else ""
 
     def _game_reset(

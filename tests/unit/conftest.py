@@ -13,24 +13,15 @@ class FakeLauncher(Launcher):
     """Instead of a game, connects a FakeLua to the engine's port.
     `fail_starts` makes the first N starts die without connecting."""
 
-    def __init__(self, respond=None, hello=HELLO, fail_starts=0, connect=True, cloneable=False):
+    def __init__(self, respond=None, hello=HELLO, fail_starts=0, connect=True):
         self.respond = respond
         self.hello = hello
         self.fail_starts = fail_starts
         self.connect = connect
-        self.cloneable = cloneable
-        self.clones = []
         self.starts = 0
         self.stops = 0
         self.running = False
         self.lua = None
-
-    def clone(self):
-        if not self.cloneable:
-            raise NotImplementedError
-        twin = FakeLauncher(self.respond, self.hello, connect=self.connect, cloneable=True)
-        self.clones.append(twin)
-        return twin
 
     def start(self, port):
         self.starts += 1

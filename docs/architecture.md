@@ -110,16 +110,8 @@ def __init__(self, game_dir=None, launcher="auto", renderer="auto", **kwargs):
 3. With a `render_mode`, asks the launcher for a frame source; `"rgb_array_list"` needs one that
    counts frames (`counts_frames`, only `VulkanFrameSource`), else it is a `ValueError`.
 
-The same `_start_game()` replaces the game later:
-
-- `reset()` restarts in place a game that does not answer (`_restart_game()`, see Process Crashes).
-- With `restart_every`, after about that many steps (drawn per game within ±25 %, `RESTART_JITTER`,
-  so that games started together restart apart) `NextGame` runs `_start_game()` in a thread with a
-  second launcher (`launcher.clone()`) on a second port, while the current game keeps playing. The
-  first `reset()` once it is up switches connection, frame source and launcher to the new game and
-  retires the old one: it sends it `close` and stops its launcher in the background. A launcher
-  without `clone()` restarts in place at that reset instead. If the new game fails to start, the old
-  one goes on and the next try comes after another `restart_every` steps.
+`reset()` uses the same `_start_game()` to restart in place a game that does not answer
+(`_restart_game()`, see Process Crashes).
 
 ### Launchers (engine/launchers/)
 
