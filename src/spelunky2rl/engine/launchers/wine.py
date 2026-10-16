@@ -21,6 +21,16 @@ def default_wine_home() -> Path:
     return Path(base) / "spelunky2rl" / "wine"
 
 
+def runs_the_games_msvcp140(prefix: Path) -> bool:
+    """Whether setup_wine.sh gave Spel2.exe its own msvcp140.dll: an older one left Wine's, which leaks
+    (see docker/Dockerfile)."""
+    try:
+        user_reg = (prefix / "user.reg").read_text(errors="replace")
+    except OSError:
+        return False
+    return r"[Software\\Wine\\AppDefaults\\Spel2.exe\\DllOverrides]" in user_reg
+
+
 class WineLauncher(Launcher):
     """Runs the game under the host's Wine, without Docker. Meant for development.
 
@@ -42,6 +52,8 @@ class WineLauncher(Launcher):
         for needed in ("playlunky/playlunky_launcher.exe", "playlunky/PATCHED", "steam_api64.dll", "prefix"):
             if not (self.home / needed).exists():
                 raise FileNotFoundError(f"{self.home / needed} is missing: run scripts/setup_wine.sh first")
+        if not runs_the_games_msvcp140(self.home / "prefix"):
+            raise RuntimeError(f"{self.home} was set up by an older scripts/setup_wine.sh: run it again")
         self.renderer = renderer
         dev_mod = dev_mod or os.environ.get("SPELUNKY2RL_DEV_MOD")
         self.dev_mod = Path(dev_mod).expanduser().resolve() if dev_mod else None

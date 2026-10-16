@@ -52,13 +52,15 @@ def _check_docker(image: str) -> bool:
 
 
 def _check_wine() -> bool:
-    from .engine.launchers.wine import default_wine_home
+    from .engine.launchers.wine import default_wine_home, runs_the_games_msvcp140
 
     home = Path(os.environ.get("SPELUNKY2RL_WINE_HOME") or default_wine_home())
     if shutil.which("wine") is None or shutil.which("Xvfb") is None:
         return _report(FAIL, "wine: needs wine and Xvfb on PATH")
     if not (home / "prefix").is_dir() or not (home / "playlunky" / "playlunky_launcher.exe").is_file():
         return _report(FAIL, f"wine: {home} is not set up; run scripts/setup_wine.sh")
+    if not runs_the_games_msvcp140(home / "prefix"):
+        return _report(FAIL, f"wine: {home} was set up by an older scripts/setup_wine.sh; run it again")
     return _report(OK, f"wine: {home}")
 
 

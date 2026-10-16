@@ -153,3 +153,21 @@ def test_docker_capture(game_dir, tmp_path, no_gpu, monkeypatch):
     assert launcher.frame_source(timeout=1).path == f"{capture_dir}/frame"
     launcher.stop()
     assert not os.path.exists(capture_dir) and launcher.capture_dir is None
+
+
+def test_wine_needs_the_games_msvcp140(game_dir, tmp_path, monkeypatch):
+    """A setup_wine.sh from before the msvcp140 override is refused: Wine's msvcp140 leaks."""
+    from spelunky2rl.engine.launchers.wine import WineLauncher
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    home = tmp_path / "wine"
+    for needed in ("playlunky/playlunky_launcher.exe", "playlunky/PATCHED", "steam_api64.dll"):
+        (home / needed).parent.mkdir(parents=True, exist_ok=True)
+        (home / needed).write_text("")
+    (home / "prefix").mkdir()
+    (home / "prefix" / "user.reg").write_text('[Software\\\\Wine\\\\DllOverrides] 1\n"d3d11"="native"\n')
+    with pytest.raises(RuntimeError, match="older scripts/setup_wine.sh"):
+        WineLauncher(game_dir, wine_home=home)
+    with open(home / "prefix" / "user.reg", "a") as f:
+        f.write('\n[Software\\\\Wine\\\\AppDefaults\\\\Spel2.exe\\\\DllOverrides] 1\n"msvcp140"="native,builtin"\n')
+    assert WineLauncher(game_dir, wine_home=home).home == home

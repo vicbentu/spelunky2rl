@@ -25,6 +25,8 @@ cp "$HOME_DIR"/dxvk/x64/*.dll "$WINEPREFIX/drive_c/windows/system32/"
 for d in d3d11 dxgi d3d10core d3d9 d3d8; do
     wine reg add 'HKCU\Software\Wine\DllOverrides' /v "$d" /d native /f >/dev/null
 done
+# the game's own msvcp140.dll: Wine's before 10.5 leaks (see docker/Dockerfile)
+wine reg add 'HKCU\Software\Wine\AppDefaults\Spel2.exe\DllOverrides' /v msvcp140 /d native,builtin /f >/dev/null
 wine reg add 'HKCU\Software\Wine\Drivers' /v Audio /d '' /f >/dev/null
 # a crash dialog would keep the dead game's process alive until startup_timeout
 wine reg add 'HKCU\Software\Wine\WineDbg' /v ShowCrashDialog /t REG_DWORD /d 0 /f >/dev/null

@@ -47,26 +47,20 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   propio contenedor al salir (`entrypoint.sh`, trap), o limpiar al arrancar los que no monte ningún
   contenedor vivo. Creación y borrado en `engine/launchers/docker.py` (`mkdtemp` en `start`,
   `rmtree` en `stop`).
-- [2026-10-16 00:39 @8051c4f] `Spel2.exe` crece ~1 KB de memoria anónima por frame presentado y el paso se encarece
-  con él (5 juegos en lockstep: 2,5 → 3,1 ms por paso y 888 → 1.271 MB en 330k pasos por juego;
-  en los entrenamientos 004/005, el doble o el triple). `restart_every` lo contiene reiniciando el
-  juego; la causa sigue abierta. Medido (scripts y mods de diagnóstico en el scratchpad de la sesión
-  del 2026-10-15, `leak.py`, `ping.py`, `*mod/`):
-  - Sin render (headless) no crece; con render ~1,2 KB por paso (k=6) y ~0,85 (k=1).
-  - Igual sin la capa de captura, sin dibujar el nivel, sin dibujar el HUD, sin ningún callback de
-    render en el mod, con lavapipe y con el GC generacional de Lua.
-  - 600k pings al mod sin frames: 42 µs cada uno, sin fuga ni deriva.
-  - El heap de Lua (`collectgarbage("count")`) y las entidades no crecen; solo hay una VM de Lua.
-  - Lo que crece son subheaps del heap de proceso de Wine de 0xFD0000 bytes (`HEAP_MAX_GROW_SIZE`,
-    wine-10.0 `dlls/ntdll/heap.c`), llenos de objetos de Lua 5.4 / sol2: o algo no libera una
-    asignación por present (Overlunky/ImGui/Playlunky en `hkPresent`, el `DrawVersionOverlay` de
-    Playlunky, como su issue #36), o el LFH de Wine fragmenta (un bloque vivo retiene su grupo de
-    31). No hay versión más nueva de Playlunky (v0.19.0) ni de Overlunky (32b7e20 es `main`).
-  Siguientes pruebas: recorrer los subheaps volcados (cabecera en `+0x30`, bloques de 8 bytes desde
-  `+0x38`) para ver si son bloques libres o vivos y de quién; `GlobalFlag=0x20` en el registro para
-  `Spel2.exe` (rellena lo liberado con `0xFEEEFEEE`); el juego en reposo en la pantalla de título
-  con y sin el mod; parchear Playlunky para no registrar `DrawVersionOverlay`. Leer la memoria del
-  juego necesita `--cap-add SYS_PTRACE` en el contenedor.
+- [2026-10-16 11:46 @f465d05] Con `renderer="cpu"`, lavapipe (Mesa 26.0.8 en la imagen) pierde un `llvmpipe_resource` de
+  0x220 B por command buffer, ~0,53 KB por present en un arena de glibc (~530 MB por millón de pasos
+  por juego): `handle_vertex_buffers2` (`src/gallium/frontends/lavapipe/lvp_execute.c:1112`) crea un
+  recurso temporal en cada bind de vertex buffer con tamaño explícito y `lvp_execute_cmds` no
+  libera el último al acabar (`:5394-5420`). Lo dispara DXVK; `vkcube` no pierde nada. Medido con un
+  tracer de malloc por `LD_PRELOAD` (scratchpad de la sesión del 2026-10-16, `forensics/mtrace/` y
+  `bisect/mt/`). No encarece el paso: 3 juegos en lockstep con `cpu_threads=4` y el `msvcp140` del
+  juego, 10,0 → 9,9 ms por paso de 10k a 410k pasos por juego, con +233 MiB por juego. Falta: mirar
+  si Mesa main lo arregla (si no, reportarlo).
+- [2026-10-16 11:46 @f465d05] El array del registro de Lua gana ~1 entrada (valor 1) por paso con render: 50.835 a los 50k
+  pasos y 96.585 a los 95k (heap walk del 2026-10-16), con o sin el overlay de Playlunky. Algo hace
+  `luaL_ref` sin `luaL_unref` en cada paso (Overlunky, sol2 o una llamada del mod): ~28 B por paso,
+  no explica la deriva. Para encontrarlo: `#debug.getregistry()` antes y después de cada llamada
+  que hace el mod en un paso (`observations.collect`, `input.apply`, `update_state`...).
 
 ## Improvements
 

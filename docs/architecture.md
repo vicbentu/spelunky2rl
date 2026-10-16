@@ -144,6 +144,13 @@ contain images. `meta.unsafe` scripts (needed for luasocket) always start disabl
 (`docker/playlunky-patch.md` says why and how to redo it on a Playlunky bump). Overlunky is not
 used: it draws its UI into every frame.
 
+The game runs with the `msvcp140.dll` from its own folder, not Wine's (`native,builtin` for
+`Spel2.exe` in the prefix, set by `docker/Dockerfile` and `scripts/setup_wine.sh`). Playlunky draws
+its version on screen every frame, three texts, and each one goes through a
+`std::wstring_convert<std::codecvt_utf8_utf16<char16_t>>`; Wine's `msvcp140` before 10.5 (Ubuntu
+26.04 ships 10.0) leaves that codecvt's reference count unset and never frees it. With Wine's
+allocator around it, the game's heap grew ~1.2 KB a step and its steps got slower the longer it ran.
+
 `local.cfg` opens the game as a borderless window filling the Xvfb screen: fullscreen leaves every
 frame black under Wine + Xvfb, and a framed window leaves a black band where the title bar would be.
 The game draws at the screen's size (`resolutionx/y` do not matter), keeping 16:9 with black bars
