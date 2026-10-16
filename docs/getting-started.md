@@ -276,6 +276,13 @@ Past ~10 games the GPU is the limit (90 % busy). With one game the GPU barely wo
 lowers its clocks, so a step takes about twice as long as with a few games. In lockstep every game
 waits for the slowest one and for every reset each step: about 40 % fewer steps than free.
 
+How many, then: on this machine about 10 games on the GPU; more add little to the games and take
+GPU time from a model training on the same card. In a PPO training with a small transformer policy
+on that card (lockstep, the policy and the update in turns with the games), 10 and 15 games gave the
+same ~720 steps/s: the games stepped ~1,600-1,800 steps/s while they ran, and the policy and the
+update took the rest of the time. Past that point the training loop, not the games, sets the speed:
+overlapping the games' steps with the update (asynchronous collection) is what comes next.
+
 ### Drawing on the CPU
 
 On the CPU (`renderer="cpu"`, or `"auto"` without a GPU) each game draws its frames with as many

@@ -109,6 +109,20 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   unitario porque `start()` lanza Xvfb. Con Docker se verificó contando los hilos `llvmpipe-*` de `Spel2.exe`
   (`/proc/<pid>/task/*/comm`): 24 sin el parámetro, 2 con `cpu_threads=2`. Repetir con `launcher="wine"` y
   `renderer="cpu"` con `~/Desktop/tmp/spelunky/cpu_threads/e2e.py` (añadirle `launcher="wine"`).
+- [2026-10-16 02:07 @1ef894b] From "Rendimiento": `benchmarks/throughput.py` parte el paso en send, game, frame y python,
+  pero `game` junta el mod, los frames de lógica y el dibujo. Medido aparte: el intercambio con Python
+  42 µs (`ping`), los 6 frames de lógica sin dibujar ~0,5 ms, dibujar el nivel ~0,4 ms y el callback
+  `RENDER_POST_HUD` ~0,15 ms. Para tenerlo en el benchmark: una opción de reset `profile=True` con la que
+  el mod añade a la cabecera de cada estado duraciones medidas con `get_performance_counter()` (el QPC
+  real, sin el speedhack): desde que recibe el comando hasta acabar `run_logic_frames`, hasta
+  `pending = drawn`, hasta `RENDER_POST_HUD`, hasta el `PRE_GAME_LOOP` que contesta, y `collect()`;
+  el motor las deja en `info["timing"]` y el benchmark las suma. La capa de captura puede escribir
+  sus tiempos (`clock_gettime(CLOCK_MONOTONIC)`, comparables con los de Python) en los 32 bytes libres
+  de la cabecera de cada slot (`capture.c`, `SLOT_SIZE`).
+- [2026-10-16 02:07 @1ef894b] From "Rendimiento": `WineLauncher` tiene `gpu_memory_mb` (pone `DXVK_CONFIG`) y `clone()`
+  (para `restart_every`), solo probados con tests unitarios; con Docker se verificaron con el juego.
+  Correr con `launcher="wine"` y GPU `tests/integration/test_game.py::test_restart_every_switches_to_a_new_game`
+  y mirar la VRAM por juego con `nvidia-smi --query-compute-apps`.
 
 ## Ideas
 
