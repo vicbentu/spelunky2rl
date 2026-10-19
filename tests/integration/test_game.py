@@ -1,10 +1,6 @@
-"""Against the real game: python -m pytest tests/integration (needs SPELUNKY2RL_GAME_DIR, Docker and the image).
-
-SPELUNKY2RL_LAUNCHER picks the launcher (default: docker on Linux).
-"""
+"""Against the real game: python -m pytest tests/integration (needs SPELUNKY2RL_GAME_DIR, Docker and the image)."""
 
 import math
-import os
 import subprocess
 import time
 
@@ -38,12 +34,6 @@ def first_difference(a, b, path="state"):
                 return difference
     elif not np.array_equal(np.asarray(a), np.asarray(b)):
         return f"{path}: {a!r} != {b!r}"
-
-
-def needs_capture():
-    """render() with the Wine launcher grabs the screen with mss; Docker reads the capture layer."""
-    if os.environ.get("SPELUNKY2RL_LAUNCHER") == "wine":
-        needs_capture()
 
 
 def test_episode_and_cleanup():
@@ -249,7 +239,6 @@ def test_parallel_envs(n):
 
 
 def test_render_returns_game_frames():
-    needs_capture()
     env = GetToExit(render_enabled=True, god_mode=True)
     try:
         env.reset(seed=3)
@@ -265,7 +254,6 @@ def test_render_returns_game_frames():
 
 def test_render_resolution():
     """The game fills a screen of any 16:9 size, with no black bars."""
-    needs_capture()
     env = GetToExit(render_enabled=True, render_resolution=(320, 180), god_mode=True)
     try:
         env.reset(seed=3)
@@ -296,7 +284,6 @@ def test_render_does_not_change_the_game(render_mode):
         finally:
             env.close()
 
-    needs_capture()
     plain, rendered = trajectory(), trajectory(render_mode=render_mode, render_resolution=(160, 90))
     for step, (a, b) in enumerate(zip(plain, rendered)):
         difference = first_difference(a, b)
@@ -306,7 +293,6 @@ def test_render_does_not_change_the_game(render_mode):
 def test_render_returns_the_state_frame():
     """The image is the state's: it changes with every step, stays the same until the next one, and
     after a reset it is the new level's."""
-    needs_capture()
     env = GetToExit(render_enabled=True, render_resolution=(320, 180), god_mode=True)
     try:
         env.reset(seed=3)
@@ -335,7 +321,6 @@ def test_render_returns_the_state_frame():
 def test_render_list_returns_every_frame():
     """rgb_array_list: reset's frame, then the frames_per_step of each step, all different while the
     player runs."""
-    needs_capture()
     env = GetToExit(render_mode="rgb_array_list", frames_per_step=6, render_resolution=(320, 180), god_mode=True)
     try:
         env.reset(seed=3)

@@ -10,16 +10,6 @@ aplica. `@sha` es el commit en que estaba el código al escribir la entrada.
 
 ## Decidido sin ti
 
-### wine-prefix-per-instance · [2026-09-28 13:18 @4a2a9cf] El modo `wine` copia el prefijo por instancia (~1,2 GB cada uno)
-
-`WineLauncher` reserva "slots" con un bloqueo y copia el prefijo base la primera vez
-(`cp --reflink=auto`, gratis en btrfs/xfs). Con un prefijo compartido, 1 de 4 instancias fallaba.
-
-Coste: disco la primera vez en ext4. Solo afecta al modo sin Docker.
-
-Para cambiarlo: borrar `~/.local/share/spelunky2rl/wine/prefixes/`; o investigar el fallo con prefijo
-compartido.
-
 ### lua-tests-skipped-in-ci · [2026-10-01 21:59 @3d4af91] Los tests del BFS en Lua se saltan en CI
 
 `tests/unit/test_lua_pathfinding.py` ejecuta `pathfinding.distance_field` con el intérprete `lua5.4` o

@@ -46,8 +46,7 @@ def ensure_image(image: str, docker: str = "docker") -> None:
     if image in _checked_images:
         return
     if shutil.which(docker) is None:
-        raise FileNotFoundError("Docker is not installed or not on PATH; it is needed to run the game on Linux "
-                                "(or use launcher='wine').")
+        raise FileNotFoundError("Docker is not installed or not on PATH; it is needed to run the game on Linux")
     result = subprocess.run([docker, "image", "inspect", image], capture_output=True, text=True)
     if result.returncode != 0:
         if "permission denied" in result.stderr.lower() or "cannot connect" in result.stderr.lower():

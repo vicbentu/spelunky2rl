@@ -90,7 +90,7 @@ class SpelunkyRLEngine(gym.Env):
             render_mode: None, "rgb_array" (render() returns the frame of the last state) or
                 "rgb_array_list" (render() returns every frame since the last call, for video).
             render_resolution: (width, height) of the frames, 16:9 and at least 64x36.
-            launcher: "auto" (Docker; $SPELUNKY2RL_LAUNCHER changes it), "docker", "wine" or a Launcher.
+            launcher: "auto" or "docker" (the same for now), or a Launcher.
             renderer: "auto" (GPU if Docker can use one, else CPU), "gpu" or "cpu".
             cpu_threads: threads drawing each frame when the game draws on the CPU; None, one per
                 core. Fewer can be faster with several envs and small frames.

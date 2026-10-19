@@ -31,7 +31,7 @@ or pass `game_dir="..."` when creating an environment.
 2. Install the package (Python 3.9+, in a virtual environment):
 
    ```bash
-   pip install spelunky2rl    # with launcher="wine", add [render] for render()
+   pip install spelunky2rl
    ```
 
 3. Get the game image. Either pull it, or build it from a clone of the repo (a few minutes):
@@ -56,11 +56,8 @@ Nothing keeps running when no environment is open. The first start of a new game
 ```bash
 git clone https://github.com/vicbentu/spelunky2rl.git
 cd spelunky2rl
-pip install -e ".[dev]"    # add [render], and [train]/[video] for the training examples
+pip install -e ".[dev]"    # add [train]/[video] for the training examples
 ```
-
-**Without Docker** (development): `scripts/setup_wine.sh` installs the same pieces for the host's Wine,
-then use `launcher="wine"` or `SPELUNKY2RL_LAUNCHER=wine`.
 
 **Editing the Lua mod**: set `SPELUNKY2RL_DEV_MOD=/path/to/spelunky2rl/src/spelunky2rl/mod/lua` and new
 environments load it instead of the copy in the image; no rebuild needed.
@@ -102,7 +99,7 @@ parameters; `gymnasium.make("spelunky2rl/...", ...)` passes them through.
 | `render_mode` | str | None | `None`, `"rgb_array"` or `"rgb_array_list"`: what `render()` returns, see [Speed and images](#speed-and-images) |
 | `render_enabled` | bool | False | The same as `render_mode="rgb_array"` (the older name) |
 | `render_resolution` | (int, int) | (640, 360) | Size of the frames, 16:9 and at least 64x36; the game draws at this size |
-| `launcher` | str or `Launcher` | "auto" | `"docker"` (the default on Linux; `$SPELUNKY2RL_LAUNCHER` changes it) or `"wine"` |
+| `launcher` | str or `Launcher` | "auto" | `"auto"` or `"docker"` (the same for now), or a `Launcher` instance |
 | `renderer` | str | "auto" | `"gpu"`, `"cpu"` (Mesa's lavapipe) or `"auto"` (GPU if Docker can use one) |
 | `cpu_threads` | int | None | Threads drawing each frame on the CPU; None is one per core. See [Drawing on the CPU](#drawing-on-the-cpu) |
 | `gpu_memory_mb` | int | 512 | VRAM each game may use when it draws on the GPU; None for no limit. See [Many games on one GPU](#many-games-on-one-gpu) |
@@ -216,9 +213,6 @@ faster. Steps/s with `render()` after every step, one instance:
 Without images the game runs on a 160x90 screen whatever `render_resolution` says (the screen size
 changes the speed even when nothing is drawn).
 
-With `launcher="wine"`, `"rgb_array"` grabs the screen instead, which may still show a frame from
-before the state, and `"rgb_array_list"` is not available.
-
 ### Many environments
 
 Each environment is its own game (one container on Linux), so run several in parallel. Measured on a
@@ -331,7 +325,7 @@ per game.
 Up to 0.1.3 the game ran with Wine's `msvcp140`, which leaks on every frame (see
 [architecture](architecture.md#launchers-enginelaunchers)): its memory grew ~1.2 KB a step and its
 steps got slower and slower, 2.5-3.5 times slower after 1-2 million steps per game in long
-trainings. If you set up `launcher="wine"` with an older `scripts/setup_wine.sh`, run it again.
+trainings.
 
 ## Manual Control (Testing)
 

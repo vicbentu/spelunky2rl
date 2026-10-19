@@ -1,47 +1,17 @@
 import os
-import sys
 
 import pytest
 
 import spelunky2rl.engine.launchers.docker as docker_launcher
-from spelunky2rl.engine.assemble import assemble_instance
 from spelunky2rl.engine.launchers.docker import DockerLauncher
-
-posix_only = pytest.mark.skipif(sys.platform == "win32", reason="symlink farm is for Linux")
 
 
 @pytest.fixture
 def game_dir(tmp_path):
     game = tmp_path / "Spelunky 2"
     game.mkdir()
-    for name in ("Spel2.exe", "fmod.dll", "settings.cfg", "savegame.sav", "spelunky.log", "overlunky.ini",
-                 "steam_api64.dll", "local.cfg"):
-        (game / name).write_text(name)
-    (game / "Data").mkdir()
-    (game / "Mods" / "Packs" / "SomeOtherMod").mkdir(parents=True)
+    (game / "Spel2.exe").write_text("Spel2.exe")
     return game
-
-
-@posix_only
-def test_symlink_farm(game_dir, tmp_path):
-    assets = tmp_path / "assets"
-    assets.mkdir()
-    (assets / "steam_api64.dll").write_text("goldberg")
-    out = assemble_instance(game_dir, tmp_path / "inst", assets / "steam_api64.dll", cache=tmp_path / "cache")
-
-    assert os.readlink(out / "Spel2.exe") == str(game_dir / "Spel2.exe")
-    assert os.readlink(out / "Data") == str(game_dir / "Data")
-    for written in ("settings.cfg", "savegame.sav"):
-        assert not (out / written).is_symlink() and (out / written).read_text() == written
-    assert not (out / "spelunky.log").exists()
-    assert (out / "steam_api64.dll").read_text() == "goldberg"
-    assert (out / "steam_appid.txt").read_text().strip() == "418530"
-    # our borderless window, not the user's video settings (fullscreen leaves every frame black)
-    assert "<window_mode>1</window_mode>" in (out / "local.cfg").read_text()
-    packs = out / "Mods" / "Packs"
-    assert sorted(p.name for p in packs.iterdir()) == [".db", "load_order.txt", "spelunky2rl"]
-    assert (packs / "spelunky2rl" / "lua" / "main.lua").is_file()
-    assert (packs / "load_order.txt").read_text() == "spelunky2rl\n"
 
 
 @pytest.fixture
@@ -153,21 +123,3 @@ def test_docker_capture(game_dir, tmp_path, no_gpu, monkeypatch):
     assert launcher.frame_source(timeout=1).path == f"{capture_dir}/frame"
     launcher.stop()
     assert not os.path.exists(capture_dir) and launcher.capture_dir is None
-
-
-def test_wine_needs_the_games_msvcp140(game_dir, tmp_path, monkeypatch):
-    """A setup_wine.sh from before the msvcp140 override is refused: Wine's msvcp140 leaks."""
-    from spelunky2rl.engine.launchers.wine import WineLauncher
-
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
-    home = tmp_path / "wine"
-    for needed in ("playlunky/playlunky_launcher.exe", "playlunky/PATCHED", "steam_api64.dll"):
-        (home / needed).parent.mkdir(parents=True, exist_ok=True)
-        (home / needed).write_text("")
-    (home / "prefix").mkdir()
-    (home / "prefix" / "user.reg").write_text('[Software\\\\Wine\\\\DllOverrides] 1\n"d3d11"="native"\n')
-    with pytest.raises(RuntimeError, match="older scripts/setup_wine.sh"):
-        WineLauncher(game_dir, wine_home=home)
-    with open(home / "prefix" / "user.reg", "a") as f:
-        f.write('\n[Software\\\\Wine\\\\AppDefaults\\\\Spel2.exe\\\\DllOverrides] 1\n"msvcp140"="native,builtin"\n')
-    assert WineLauncher(game_dir, wine_home=home).home == home

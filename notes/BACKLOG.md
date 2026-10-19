@@ -14,11 +14,11 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   `map_info` sale todo a 0; `dist_to_goal` se busca en el tablero de la capa frontal. Leído en el
   código, sin reproducir (entrar por una puerta a la capa trasera y mirar `map_info`). Mismo origen que
   el de `count_dead_enemies`. Hoy `refresh` en `spelunky2rl/pathfinding.lua`.
-- [2026-10-04 20:39 @188a940] `manual_control=True` no sirve con los launchers actuales: el mod solo deja de escribir la
-  entrada del agente (`input.lua`) para que el juego lea el teclado, pero `docker` y `wine` corren el
+- [2026-10-04 20:39 @188a940] `manual_control=True` no sirve con el launcher de Docker: el mod solo deja de escribir la
+  entrada del agente (`input.lua`) para que el juego lea el teclado, pero el contenedor corre el
   juego en un Xvfb que nadie ve y al que no llega ninguna tecla; el jugador se queda quieto.
   `examples/manual_control.py` y `getting-started.md` (l. 198-222) prometen jugar con el teclado.
-  Arreglarlo (VNC con `x11vnc` al Xvfb, o en `wine` usar el `DISPLAY` del host) o quitar la opción.
+  Arreglarlo (VNC con `x11vnc` al Xvfb) o quitar la opción.
 - [2026-10-07 14:57 @463aef0] `envs/get_to_exit.py`: `min_dist_to_goal` y `no_improve_counter` solo se reinician al
   acabar el episodio (`done or truncated`), no en `reset()`. Si se llama a `reset()` a mitad de un
   episodio (p. ej. evaluaciones con un límite de pasos propio, o `AsyncVectorEnv` tras un error), el
@@ -90,19 +90,6 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   `package.loadlib` y la ruta de `script_path.lua`. Quitarla y pasar
   `tests/integration`. Solo probado bajo Wine en Docker; no la quité en la reorganización porque no
   puedo probarlo en Windows nativo.
-- [2026-10-07 21:14 @1ec06d0] From "Velocidad y render", paso 5: con `launcher="wine"` `render()` sigue capturando
-  el Xvfb con mss (`X11FrameSource`), así que puede devolver un frame 1–3 frames anterior al estado; la
-  capa de Vulkan (`docker/vklayer/capture.c`) solo está en la imagen de Docker. Para llevarla:
-  `scripts/setup_wine.sh` la compila (gcc + cabeceras de Vulkan) en el wine home junto a un
-  `capture.json` con la ruta absoluta del `.so`; `WineLauncher` pone `VK_ADD_LAYER_PATH`,
-  `SPELUNKY2RL_CAPTURE_LAYER=1` y `SPELUNKY2RL_CAPTURE` (un directorio en `/dev/shm` por instancia,
-  borrado en `stop()`) con `capture`, y `frame_source` devuelve `VulkanFrameSource`, como
-  `DockerLauncher`. El mod ya lo hace todo.
-- [2026-10-15 12:17 @e791351] From "cpu_threads": `WineLauncher` pone `LP_NUM_THREADS` en el entorno del juego
-  (`start()` en `engine/launchers/wine.py`) pero nunca se ha corrido con el juego bajo Wine, y no hay test
-  unitario porque `start()` lanza Xvfb. Con Docker se verificó contando los hilos `llvmpipe-*` de `Spel2.exe`
-  (`/proc/<pid>/task/*/comm`): 24 sin el parámetro, 2 con `cpu_threads=2`. Repetir con `launcher="wine"` y
-  `renderer="cpu"` con `~/Desktop/tmp/spelunky/cpu_threads/e2e.py` (añadirle `launcher="wine"`).
 - [2026-10-16 02:07 @1ef894b] From "Rendimiento": `benchmarks/throughput.py` parte el paso en send, game, frame y python,
   pero `game` junta el mod, los frames de lógica y el dibujo. Medido aparte: el intercambio con Python
   42 µs (`ping`), los 6 frames de lógica sin dibujar ~0,5 ms, dibujar el nivel ~0,4 ms y el callback
@@ -113,9 +100,18 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   el motor las deja en `info["timing"]` y el benchmark las suma. La capa de captura puede escribir
   sus tiempos (`clock_gettime(CLOCK_MONOTONIC)`, comparables con los de Python) en los 32 bytes libres
   de la cabecera de cada slot (`capture.c`, `SLOT_SIZE`).
-- [2026-10-16 02:07 @1ef894b] From "Rendimiento": `WineLauncher` tiene `gpu_memory_mb` (pone `DXVK_CONFIG`), solo
-  probado con tests unitarios; con Docker se verificó con el juego. Correr con `launcher="wine"` y GPU y
-  mirar la VRAM por juego con `nvidia-smi --query-compute-apps`.
+- [2026-10-19 12:36 @f3709dc] From "Quitar el launcher wine": desde que se quitó `engine/assemble.py`, nada en el paquete lee
+  `mod/` ni `engine/launchers/config/` en tiempo de ejecución; el `Dockerfile` los copia del árbol de
+  fuentes (`COPY src/spelunky2rl/mod/lua/` y `COPY src/spelunky2rl/engine/launchers/config/`). El wheel
+  los sigue llevando por `[tool.setuptools.package-data]` en `pyproject.toml`, y tres tests unitarios
+  leen `mod/` del paquete instalado con `files("spelunky2rl")`: `test_package_ships_the_mod_and_entity_names`
+  (`tests/unit/test_engine.py`, comprueba justo que el wheel lleva el mod), `tests/unit/test_startup.py`
+  (l. 18) y `tests/unit/test_lua_pathfinding.py` (l. 10). El CI instala el paquete sin `-e`, así que
+  un `pytest` local (editable) no ve que fallan. Para quitarlos de `package-data`: apuntar esos tests al
+  árbol de fuentes (`Path(__file__).resolve().parents[2] / "src/spelunky2rl/mod/lua"`), quitar del
+  primero las comprobaciones del mod, mover `playlunky.ini`/`local.cfg` a `docker/config/` (junto a
+  `nvidia_icd.json`), reconstruir la imagen y pasar `tests/unit` con una instalación no editable y
+  `tests/integration`.
 
 ## Ideas
 
@@ -147,8 +143,8 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   --logdir`), `docs/getting-started.md` l. 36 (`[train]`) y `docs/architecture.md` l. 608. Los tests
   (`tests/unit`, `tests/integration`) no importan nada de eso. Decidir: qué demos quedan (¿solo
   `manual_control` y un benchmark sin SB3, con el `VectorEnv` de Gymnasium?), adónde van las de
-  entrenamiento (otro repo, `examples/` fuera del paquete sin extras, o borrarlas), y si sobran extras. Repasar también tests y scripts
-  (`scripts/`) que ya no sirvan.
+  entrenamiento (otro repo, `examples/` fuera del paquete sin extras, o borrarlas), y si sobran extras. Repasar también tests que ya
+  no sirvan.
 - [2026-10-06 12:09 @dbca4b8] Con vistas grandes el paso lo domina recoger `map_info` en Lua, no la comunicación (ya en
   binario). Medido con `GetToExit` y `map_info` + `entity_info` + `dist_to_goal` (speedup,
   `state_updates=50`): 21x11 0,52 ms/paso, 81x41 0,95, 161x121 2,46; de esos ~1,9 ms extra, empaquetar
