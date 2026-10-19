@@ -7,7 +7,7 @@ local M = {}
 
 -- Keep in sync with PROTOCOL_VERSION in engine/protocol.py and __version__ in version.py
 local PROTOCOL_VERSION = 3
-local MOD_VERSION = "0.1.3"
+local MOD_VERSION = "0.1.4"
 
 local client = nil
 
@@ -18,7 +18,10 @@ function M.connect()
     client = socket.tcp()
     local success, err = client:connect("127.0.0.1", port)
     if not success then
-        error("Failed to connect: " .. tostring(err))
+        -- nobody listens there (the Python side is gone): a game left running would keep its VRAM
+        -- and its display until someone kills it
+        print("spelunky2rl: cannot connect to port " .. tostring(port) .. " (" .. tostring(err) .. "), exiting")
+        os.exit()
     end
     client:setoption("tcp-nodelay", true)  -- one small message each way per step: never wait to batch
     M.send({hello = {protocol = PROTOCOL_VERSION, mod = MOD_VERSION}})

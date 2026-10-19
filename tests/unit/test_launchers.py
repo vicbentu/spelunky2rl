@@ -1,47 +1,17 @@
 import os
-import sys
 
 import pytest
 
 import spelunky2rl.engine.launchers.docker as docker_launcher
-from spelunky2rl.engine.assemble import assemble_instance
 from spelunky2rl.engine.launchers.docker import DockerLauncher
-
-posix_only = pytest.mark.skipif(sys.platform == "win32", reason="symlink farm is for Linux")
 
 
 @pytest.fixture
 def game_dir(tmp_path):
     game = tmp_path / "Spelunky 2"
     game.mkdir()
-    for name in ("Spel2.exe", "fmod.dll", "settings.cfg", "savegame.sav", "spelunky.log", "overlunky.ini",
-                 "steam_api64.dll", "local.cfg"):
-        (game / name).write_text(name)
-    (game / "Data").mkdir()
-    (game / "Mods" / "Packs" / "SomeOtherMod").mkdir(parents=True)
+    (game / "Spel2.exe").write_text("Spel2.exe")
     return game
-
-
-@posix_only
-def test_symlink_farm(game_dir, tmp_path):
-    assets = tmp_path / "assets"
-    assets.mkdir()
-    (assets / "steam_api64.dll").write_text("goldberg")
-    out = assemble_instance(game_dir, tmp_path / "inst", assets / "steam_api64.dll", cache=tmp_path / "cache")
-
-    assert os.readlink(out / "Spel2.exe") == str(game_dir / "Spel2.exe")
-    assert os.readlink(out / "Data") == str(game_dir / "Data")
-    for written in ("settings.cfg", "savegame.sav"):
-        assert not (out / written).is_symlink() and (out / written).read_text() == written
-    assert not (out / "spelunky.log").exists()
-    assert (out / "steam_api64.dll").read_text() == "goldberg"
-    assert (out / "steam_appid.txt").read_text().strip() == "418530"
-    # our borderless window, not the user's video settings (fullscreen leaves every frame black)
-    assert "<window_mode>1</window_mode>" in (out / "local.cfg").read_text()
-    packs = out / "Mods" / "Packs"
-    assert sorted(p.name for p in packs.iterdir()) == [".db", "load_order.txt", "spelunky2rl"]
-    assert (packs / "spelunky2rl" / "lua" / "main.lua").is_file()
-    assert (packs / "load_order.txt").read_text() == "spelunky2rl\n"
 
 
 @pytest.fixture
@@ -75,6 +45,47 @@ def test_docker_gpu_and_dev_mod(game_dir, tmp_path, monkeypatch):
     assert f"{dev}:/opt/mod/lua:ro" in cmd
     cpu = DockerLauncher(game_dir, cache_dir=tmp_path / "c", renderer="cpu").command(1)
     assert "--gpus" not in cpu and "RENDERER=cpu" in cpu
+
+
+def test_cpu_threads_reach_lavapipe(game_dir, tmp_path, monkeypatch):
+    from spelunky2rl.engine.launchers import make_launcher
+
+    monkeypatch.setattr(docker_launcher, "docker_has_nvidia", lambda docker="docker": False)
+    default = DockerLauncher(game_dir, cache_dir=tmp_path / "c", renderer="cpu").command(1)
+    assert not any(arg.startswith("LP_NUM_THREADS") for arg in default)
+    cpu = make_launcher("docker", str(game_dir), renderer="cpu", cpu_threads=4,
+                        options={"cache_dir": tmp_path / "c"}).command(1)
+    assert cpu[cpu.index("LP_NUM_THREADS=4") - 1] == "-e"
+    # "auto" without a GPU draws on the CPU too
+    assert "LP_NUM_THREADS=2" in DockerLauncher(game_dir, cache_dir=tmp_path / "c", cpu_threads=2).command(1)
+    monkeypatch.setattr(docker_launcher, "docker_has_nvidia", lambda docker="docker": True)
+    gpu = DockerLauncher(game_dir, cache_dir=tmp_path / "c", cpu_threads=4).command(1)
+    assert not any(arg.startswith("LP_NUM_THREADS") for arg in gpu)
+
+
+@pytest.mark.parametrize("bad", [0, -1, 2.5, "4", True])
+def test_cpu_threads_must_be_a_positive_int(game_dir, tmp_path, no_gpu, bad):
+    with pytest.raises(ValueError, match="cpu_threads"):
+        DockerLauncher(game_dir, cache_dir=tmp_path / "c", cpu_threads=bad)
+
+
+def test_gpu_memory_caps_dxvk(game_dir, tmp_path, monkeypatch):
+    from spelunky2rl.engine.launchers import make_launcher
+
+    monkeypatch.setattr(docker_launcher, "docker_has_nvidia", lambda docker="docker": True)
+    capped = make_launcher("docker", str(game_dir), gpu_memory_mb=512, options={"cache_dir": tmp_path / "c"}).command(1)
+    assert capped[capped.index("DXVK_CONFIG=dxvk.maxMemoryBudget=512") - 1] == "-e"
+    uncapped = DockerLauncher(game_dir, cache_dir=tmp_path / "c").command(1)
+    assert not any(arg.startswith("DXVK_CONFIG") for arg in uncapped)
+    # on the CPU there is no VRAM to cap
+    cpu = DockerLauncher(game_dir, cache_dir=tmp_path / "c", renderer="cpu", gpu_memory_mb=512).command(1)
+    assert not any(arg.startswith("DXVK_CONFIG") for arg in cpu)
+
+
+@pytest.mark.parametrize("bad", [0, -1, 2.5, "512", True])
+def test_gpu_memory_must_be_a_positive_int(game_dir, tmp_path, no_gpu, bad):
+    with pytest.raises(ValueError, match="gpu_memory_mb"):
+        DockerLauncher(game_dir, cache_dir=tmp_path / "c", gpu_memory_mb=bad)
 
 
 def test_gpu_renderer_needs_a_gpu(game_dir, tmp_path, no_gpu):

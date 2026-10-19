@@ -14,11 +14,11 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   `map_info` sale todo a 0; `dist_to_goal` se busca en el tablero de la capa frontal. Leído en el
   código, sin reproducir (entrar por una puerta a la capa trasera y mirar `map_info`). Mismo origen que
   el de `count_dead_enemies`. Hoy `refresh` en `spelunky2rl/pathfinding.lua`.
-- [2026-10-04 20:39 @188a940] `manual_control=True` no sirve con los launchers actuales: el mod solo deja de escribir la
-  entrada del agente (`input.lua`) para que el juego lea el teclado, pero `docker` y `wine` corren el
+- [2026-10-04 20:39 @188a940] `manual_control=True` no sirve con el launcher de Docker: el mod solo deja de escribir la
+  entrada del agente (`input.lua`) para que el juego lea el teclado, pero el contenedor corre el
   juego en un Xvfb que nadie ve y al que no llega ninguna tecla; el jugador se queda quieto.
   `examples/manual_control.py` y `getting-started.md` (l. 198-222) prometen jugar con el teclado.
-  Arreglarlo (VNC con `x11vnc` al Xvfb, o en `wine` usar el `DISPLAY` del host) o quitar la opción.
+  Arreglarlo (VNC con `x11vnc` al Xvfb) o quitar la opción.
 - [2026-10-07 14:57 @463aef0] `envs/get_to_exit.py`: `min_dist_to_goal` y `no_improve_counter` solo se reinician al
   acabar el episodio (`done or truncated`), no en `reset()`. Si se llama a `reset()` a mitad de un
   episodio (p. ej. evaluaciones con un límite de pasos propio, o `AsyncVectorEnv` tras un error), el
@@ -39,6 +39,28 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   - Para reproducirlo, repetir el test con `-rA` guardando la salida, y mirar si es un cuelgue del
     juego (Spel2.exe vivo pero sin responder) o la muerte de Spel2.exe a mitad (ver la idea de los
     arranques que mueren).
+
+- [2026-10-13 15:09 @e791351] `DockerLauncher` deja directorios `spelunky2rl-capture-*` en `/dev/shm` cuando el proceso
+  muere sin llegar a `stop()` (workers `daemon` de un entrenamiento matado): el 2026-10-13 había 15, de
+  los que solo 7 eran de contenedores vivos (los más viejos del 2026-10-09). Cada uno guarda un frame
+  por slot (2 MB × 6 a 960x540 con `rgb_array_list`) en RAM hasta reiniciar. Ideas: borrarlo desde el
+  propio contenedor al salir (`entrypoint.sh`, trap), o limpiar al arrancar los que no monte ningún
+  contenedor vivo. Creación y borrado en `engine/launchers/docker.py` (`mkdtemp` en `start`,
+  `rmtree` en `stop`).
+- [2026-10-16 11:46 @f465d05] Con `renderer="cpu"`, lavapipe (Mesa 26.0.8 en la imagen) pierde un `llvmpipe_resource` de
+  0x220 B por command buffer, ~0,53 KB por present en un arena de glibc (~530 MB por millón de pasos
+  por juego): `handle_vertex_buffers2` (`src/gallium/frontends/lavapipe/lvp_execute.c:1112`) crea un
+  recurso temporal en cada bind de vertex buffer con tamaño explícito y `lvp_execute_cmds` no
+  libera el último al acabar (`:5394-5420`). Lo dispara DXVK; `vkcube` no pierde nada. Medido con un
+  tracer de malloc por `LD_PRELOAD` (scratchpad de la sesión del 2026-10-16, `forensics/mtrace/` y
+  `bisect/mt/`). No encarece el paso: 3 juegos en lockstep con `cpu_threads=4` y el `msvcp140` del
+  juego, 10,0 → 9,9 ms por paso de 10k a 410k pasos por juego, con +233 MiB por juego. Falta: mirar
+  si Mesa main lo arregla (si no, reportarlo).
+- [2026-10-16 11:46 @f465d05] El array del registro de Lua gana ~1 entrada (valor 1) por paso con render: 50.835 a los 50k
+  pasos y 96.585 a los 95k (heap walk del 2026-10-16), con o sin el overlay de Playlunky. Algo hace
+  `luaL_ref` sin `luaL_unref` en cada paso (Overlunky, sol2 o una llamada del mod): ~28 B por paso,
+  no explica la deriva. Para encontrarlo: `#debug.getregistry()` antes y después de cada llamada
+  que hace el mod en un paso (`observations.collect`, `input.apply`, `update_state`...).
 
 ## Improvements
 
@@ -68,14 +90,28 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   `package.loadlib` y la ruta de `script_path.lua`. Quitarla y pasar
   `tests/integration`. Solo probado bajo Wine en Docker; no la quité en la reorganización porque no
   puedo probarlo en Windows nativo.
-- [2026-10-07 21:14 @1ec06d0] From "Velocidad y render", paso 5: con `launcher="wine"` `render()` sigue capturando
-  el Xvfb con mss (`X11FrameSource`), así que puede devolver un frame 1–3 frames anterior al estado; la
-  capa de Vulkan (`docker/vklayer/capture.c`) solo está en la imagen de Docker. Para llevarla:
-  `scripts/setup_wine.sh` la compila (gcc + cabeceras de Vulkan) en el wine home junto a un
-  `capture.json` con la ruta absoluta del `.so`; `WineLauncher` pone `VK_ADD_LAYER_PATH`,
-  `SPELUNKY2RL_CAPTURE_LAYER=1` y `SPELUNKY2RL_CAPTURE` (un directorio en `/dev/shm` por instancia,
-  borrado en `stop()`) con `capture`, y `frame_source` devuelve `VulkanFrameSource`, como
-  `DockerLauncher`. El mod ya lo hace todo.
+- [2026-10-16 02:07 @1ef894b] From "Rendimiento": `benchmarks/throughput.py` parte el paso en send, game, frame y python,
+  pero `game` junta el mod, los frames de lógica y el dibujo. Medido aparte: el intercambio con Python
+  42 µs (`ping`), los 6 frames de lógica sin dibujar ~0,5 ms, dibujar el nivel ~0,4 ms y el callback
+  `RENDER_POST_HUD` ~0,15 ms. Para tenerlo en el benchmark: una opción de reset `profile=True` con la que
+  el mod añade a la cabecera de cada estado duraciones medidas con `get_performance_counter()` (el QPC
+  real, sin el speedhack): desde que recibe el comando hasta acabar `run_logic_frames`, hasta
+  `pending = drawn`, hasta `RENDER_POST_HUD`, hasta el `PRE_GAME_LOOP` que contesta, y `collect()`;
+  el motor las deja en `info["timing"]` y el benchmark las suma. La capa de captura puede escribir
+  sus tiempos (`clock_gettime(CLOCK_MONOTONIC)`, comparables con los de Python) en los 32 bytes libres
+  de la cabecera de cada slot (`capture.c`, `SLOT_SIZE`).
+- [2026-10-19 12:36 @f3709dc] From "Quitar el launcher wine": desde que se quitó `engine/assemble.py`, nada en el paquete lee
+  `mod/` ni `engine/launchers/config/` en tiempo de ejecución; el `Dockerfile` los copia del árbol de
+  fuentes (`COPY src/spelunky2rl/mod/lua/` y `COPY src/spelunky2rl/engine/launchers/config/`). El wheel
+  los sigue llevando por `[tool.setuptools.package-data]` en `pyproject.toml`, y tres tests unitarios
+  leen `mod/` del paquete instalado con `files("spelunky2rl")`: `test_package_ships_the_mod_and_entity_names`
+  (`tests/unit/test_engine.py`, comprueba justo que el wheel lleva el mod), `tests/unit/test_startup.py`
+  (l. 18) y `tests/unit/test_lua_pathfinding.py` (l. 10). El CI instala el paquete sin `-e`, así que
+  un `pytest` local (editable) no ve que fallan. Para quitarlos de `package-data`: apuntar esos tests al
+  árbol de fuentes (`Path(__file__).resolve().parents[2] / "src/spelunky2rl/mod/lua"`), quitar del
+  primero las comprobaciones del mod, mover `playlunky.ini`/`local.cfg` a `docker/config/` (junto a
+  `nvidia_icd.json`), reconstruir la imagen y pasar `tests/unit` con una instalación no editable y
+  `tests/integration`.
 
 ## Ideas
 
@@ -107,8 +143,8 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   --logdir`), `docs/getting-started.md` l. 36 (`[train]`) y `docs/architecture.md` l. 608. Los tests
   (`tests/unit`, `tests/integration`) no importan nada de eso. Decidir: qué demos quedan (¿solo
   `manual_control` y un benchmark sin SB3, con el `VectorEnv` de Gymnasium?), adónde van las de
-  entrenamiento (otro repo, `examples/` fuera del paquete sin extras, o borrarlas), y si sobran extras. Repasar también tests y scripts
-  (`scripts/`) que ya no sirvan.
+  entrenamiento (otro repo, `examples/` fuera del paquete sin extras, o borrarlas), y si sobran extras. Repasar también tests que ya
+  no sirvan.
 - [2026-10-06 12:09 @dbca4b8] Con vistas grandes el paso lo domina recoger `map_info` en Lua, no la comunicación (ya en
   binario). Medido con `GetToExit` y `map_info` + `entity_info` + `dist_to_goal` (speedup,
   `state_updates=50`): 21x11 0,52 ms/paso, 81x41 0,95, 161x121 2,46; de esos ~1,9 ms extra, empaquetar
@@ -126,3 +162,30 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   Playlunky compitiendo con el arranque? medido cuando también se inyectaba Overlunky); el backtrace de winedbg no llega a la salida del
   contenedor, probar con `WINEDEBUG=+seh`. Scripts en `~/Desktop/tmp/spelunky/connreset/` (`stress.py`
   N_WORKERS N_ARRANQUES, `capture_plugin.py` guarda la salida de cada contenedor, `crashes.sh`).
+- [2026-10-08 12:12 @e791351] Al ver por primera vez un objeto, enemigo, etc. el juego desbloquea su entrada del diario y
+  muestra un aviso en pantalla. Con observaciones de píxeles (`render()`) ese aviso tapa parte de la vista y
+  ensucia lo que ve el agente; además, depende de la partida guardada, así que el mismo nivel no se ve
+  igual entre ejecuciones o máquinas. Idea: una opción (o el comportamiento por defecto) para empezar con
+  el diario entero desbloqueado, o para suprimir el aviso desde el mod. Mirar qué permite la API de
+  scripts de Playlunky (escribir el progreso del diario en la partida guardada, o desactivar/ocultar el
+  aviso cada frame, como ya hace `control.lua` con `game_manager.journal_ui.state`) y si tener todo
+  desbloqueado cambia algo más del juego.
+- [2026-10-15 12:17 @e791351] Con lavapipe un frame de 128x72 cuesta ~13,6 ms de CPU con `cpu_threads=1` (2,9 ms de espera con
+  los 24 hilos por defecto, pero ~25 ms de CPU repartidos: 6,2 cores para ~250 frames/s); es casi todo el paso
+  (el juego y el intercambio con Python ~1 ms). Demasiado para tan pocos píxeles, pero no es la resolución
+  interna: `resolution_scale=50` en `local.cfg` apenas cambia nada (266 frente a 252 pasos/s, y la imagen se
+  emborrona), quitar el HUD tampoco (259), y `vfx=0` o `1` son más lentos que el `2` actual (156). Hilos del
+  proceso: casi todo `llvmpipe-*`; `dxvk-*` y el hilo del juego, poco. Siguiente paso: un perfil con
+  `perf record -g` del `Spel2.exe` (necesita root: aquí `perf_event_paranoid=4`) para ver si son shaders de
+  pantalla completa, muchas capas o algo fijo de DXVK. Scripts y medidas en `~/Desktop/tmp/spelunky/cpu_threads/`
+  (`bench.py`, `results.jsonl`, `threads.py`).
+- [2026-10-16 00:39 @8051c4f] En la GPU pasa lo mismo que en lavapipe: con 15-20 juegos a 128x72 los pasos/s se
+  quedan en ~3.300 con la GPU al 91-94 % (`benchmarks/throughput.py scale`), ~0,27 ms de GPU por
+  frame, ya con 5 juegos. Es el siguiente límite tras la VRAM. Mirar con `DXVK_HUD` o Nsight qué
+  pases dibuja el juego por frame (¿iluminación o render targets a tamaño fijo?) y si 640x360 cuesta
+  lo mismo en GPU (en lavapipe casi: 252 frente a 179 pasos/s).
+- [2026-10-16 00:39 @8051c4f] Por paso con render, en el mod: el callback `ON.RENDER_POST_HUD` que cuenta los frames
+  cuesta ~0,15 ms (un juego en GPU: 1,0 → 0,79 ms por paso sin él y sin la capa de captura), y los dos
+  `RENDER_PRE_*` que solo hacen falta sin render ~0,05 ms. Contar en `ON.POST_GAME_LOOP` (sin contexto
+  de render) da un frame de más al arrancar (la captura va uno por detrás): averiguar en qué vuelta
+  del bucle no se presenta y si se puede compensar, y registrar los `RENDER_PRE_*` solo sin render.

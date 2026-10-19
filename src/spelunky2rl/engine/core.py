@@ -2,6 +2,7 @@ import atexit
 import inspect
 import socket
 import time
+import warnings
 from collections import Counter
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -68,6 +69,8 @@ class SpelunkyRLEngine(gym.Env):
             render_resolution: Tuple[int, int] = (640, 360),
             launcher: Union[str, Launcher] = "auto",
             renderer: str = "auto",
+            cpu_threads: Optional[int] = None,
+            gpu_memory_mb: Optional[int] = 512,
             launcher_options: Optional[Dict[str, Any]] = None,
             log_file: str = None,
             log_info: Optional[List[str]] = None,
@@ -87,14 +90,19 @@ class SpelunkyRLEngine(gym.Env):
             render_mode: None, "rgb_array" (render() returns the frame of the last state) or
                 "rgb_array_list" (render() returns every frame since the last call, for video).
             render_resolution: (width, height) of the frames, 16:9 and at least 64x36.
-            launcher: "auto" (Docker; $SPELUNKY2RL_LAUNCHER changes it), "docker", "wine" or a Launcher.
+            launcher: "auto" or "docker" (the same for now), or a Launcher.
             renderer: "auto" (GPU if Docker can use one, else CPU), "gpu" or "cpu".
+            cpu_threads: threads drawing each frame when the game draws on the CPU; None, one per
+                core. Fewer can be faster with several envs and small frames.
+            gpu_memory_mb: VRAM each game may use, in MB, when it draws on the GPU: the textures it has
+                not drawn lately move to system RAM. None: no limit (~1.75 GB per game).
             launcher_options: extra keyword arguments for the launcher, e.g. {"image": ...}.
             log_file: a file where every state is written, for debugging.
             log_info: what log_file gets: "all", "map_info", "entity_count".
             step_timeout: seconds to wait for the game in reset(), step() and render().
             startup_timeout: seconds for the game to start and connect.
-            max_launch_attempts: launches before giving up if the game dies before connecting.
+            max_launch_attempts: launches before giving up if the game dies before connecting; also
+                how many times in a row reset() starts again a game that stopped answering.
             spelunky_dir: the old name of game_dir.
             **kwargs: default reset options for every episode (see reset()). An unknown one is a
                 TypeError.
@@ -134,7 +142,8 @@ class SpelunkyRLEngine(gym.Env):
         self.frame_source: Optional[FrameSource] = None
 
         self.render_resolution = check_render_resolution(render_resolution)
-        self.launcher = make_launcher(launcher, self.game_dir, renderer=renderer, options=launcher_options)
+        self.launcher = make_launcher(launcher, self.game_dir, renderer=renderer, options=launcher_options,
+                                      cpu_threads=cpu_threads, gpu_memory_mb=gpu_memory_mb)
         self.launcher.screen = self.render_resolution if self.render_enabled else HIDDEN_SCREEN
         self.launcher.capture = self.render_enabled
         self.launcher.capture_frames = frames_per_step if self.render_mode == "rgb_array_list" else 1
@@ -171,6 +180,20 @@ class SpelunkyRLEngine(gym.Env):
         reset_options = self.reset_options | (options or {}) | kwargs
         if "state_updates" in reset_options:
             raise TypeError(REMOVED_STATE_UPDATES)
+        if seed is None:
+            seed = int(self.np_random.integers(0, 2**32))
+
+        # A game that stopped answering (hung, or gone: after a failed step() too) is started again
+        # and the reset sent to the new one, up to max_launch_attempts times
+        for attempt in range(1, self.max_launch_attempts + 1):
+            try:
+                return self._reset_game(seed, reset_options)
+            except (TimeoutError, ConnectionError) as error:
+                if attempt == self.max_launch_attempts:
+                    raise
+                self._restart_game(error)
+
+    def _reset_game(self, seed: int, reset_options: Dict[str, Any]) -> Tuple[Dict, Dict[str, Any]]:
         self._game_reset(seed=seed, **reset_options)
 
         header, data = self.server.receive()
@@ -247,27 +270,44 @@ class SpelunkyRLEngine(gym.Env):
         self.server_socket.bind(('127.0.0.1', 0))
         self.server_socket.listen(1)
         self.server_socket.settimeout(0.05)
-        port = self.server_socket.getsockname()[1]
         atexit.register(self.close)
 
         try:
-            with self.launcher.starting(self.startup_timeout):
-                self.server = self._launch_and_accept(port)
-                hello = check_hello(self.server.receive(timeout=HELLO_TIMEOUT)[0])
+            self.server, self.mod_version, self.frame_source = self._start_game()
         except BaseException:
             self.close()
             raise
-        self.mod_version = hello.get("mod")
+        if self.render_mode == "rgb_array_list" and not self.frame_source.counts_frames:
+            self.close()
+            raise ValueError(f"render_mode='rgb_array_list' needs the Docker launcher: "
+                             f"{type(self.launcher).__name__} cannot tell the frames of a step apart")
 
-        if self.render_enabled:
-            self.frame_source = self.launcher.frame_source(self.step_timeout)
-            if self.render_mode == "rgb_array_list" and not self.frame_source.counts_frames:
-                self.close()
-                raise ValueError(f"render_mode='rgb_array_list' needs the Docker launcher: "
-                                 f"{type(self.launcher).__name__} cannot tell the frames of a step apart")
+    def _start_game(self) -> Tuple[Connection, Optional[str], Optional[FrameSource]]:
+        """Launch the game, wait for its mod's hello and, with render, open its frames: (connection,
+        mod version, frame source)."""
+        with self.launcher.starting(self.startup_timeout):
+            server = self._launch_and_accept()
+            try:
+                hello = check_hello(server.receive(timeout=HELLO_TIMEOUT)[0])
+            except BaseException:
+                server.close()
+                raise
+        frame_source = self.launcher.frame_source(self.step_timeout) if self.render_enabled else None
+        return server, hello.get("mod"), frame_source
 
-    def _launch_and_accept(self, port: int) -> Connection:
+    def _restart_game(self, error: BaseException) -> None:
+        """Stop this game and start a new one in its place (for a reset: no state survives)."""
+        warnings.warn(f"spelunky2rl: the game stopped answering ({error}); starting it again"
+                      + self._diagnostics(), RuntimeWarning, stacklevel=3)
+        self.server.close()
+        if self.frame_source is not None:
+            self.frame_source.close()
+        self.launcher.stop()
+        self.server, self.mod_version, self.frame_source = self._start_game()
+
+    def _launch_and_accept(self) -> Connection:
         deadline = time.monotonic() + self.startup_timeout
+        port = self.server_socket.getsockname()[1]
         for _ in range(self.max_launch_attempts):
             self.launcher.start(port)
             while True:
@@ -308,8 +348,6 @@ class SpelunkyRLEngine(gym.Env):
             audio: bool = False,
         ) -> None:
 
-        if seed is None:
-            seed = int(self.np_random.integers(0, 2**32))
         message = {
             "command": "reset",
             "speedup": speedup,

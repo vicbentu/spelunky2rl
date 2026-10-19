@@ -4,12 +4,7 @@ import os
 from pathlib import Path
 from typing import Iterator, Optional
 
-import psutil
-
 from ..frames import FrameSource, NullFrameSource
-
-PORT_ENV = "Spelunky_RL_Port"  # read by mod/lua/spelunky2rl/protocol.lua
-
 
 class Launcher:
     """Starts one game instance whose Lua mod connects to 127.0.0.1:port, and tears it down.
@@ -51,6 +46,24 @@ class Launcher:
         return ""
 
 
+def check_cpu_threads(cpu_threads) -> Optional[int]:
+    """None (lavapipe's default, a thread per core) or a positive number of drawing threads."""
+    if cpu_threads is None:
+        return None
+    if isinstance(cpu_threads, bool) or not isinstance(cpu_threads, int) or cpu_threads < 1:
+        raise ValueError(f"cpu_threads must be None or a positive int, got {cpu_threads!r}")
+    return cpu_threads
+
+
+def check_gpu_memory_mb(gpu_memory_mb) -> Optional[int]:
+    """None (no cap: every texture stays in VRAM) or a positive number of megabytes."""
+    if gpu_memory_mb is None:
+        return None
+    if isinstance(gpu_memory_mb, bool) or not isinstance(gpu_memory_mb, int) or gpu_memory_mb < 1:
+        raise ValueError(f"gpu_memory_mb must be None or a positive int, got {gpu_memory_mb!r}")
+    return gpu_memory_mb
+
+
 def check_game_dir(game_dir) -> Path:
     game_dir = Path(game_dir).expanduser().resolve()
     if not (game_dir / "Spel2.exe").is_file():
@@ -78,33 +91,6 @@ def game_version_hash(game_dir: Path) -> str:
 def cache_root() -> Path:
     base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
     return Path(base) / "spelunky2rl"
-
-
-def find_game_process(port: int) -> Optional[psutil.Process]:
-    """The Spel2.exe started for this port. Matched by environment, never by name alone:
-    other instances run the same executable."""
-    for process in psutil.process_iter(["name"]):
-        if not (process.info["name"] or "").lower().startswith("spel2"):
-            continue
-        try:
-            if process.environ().get(PORT_ENV) == str(port):
-                return process
-        except (psutil.Error, OSError):
-            continue
-    return None
-
-
-def terminate(process, timeout: float = 5) -> None:
-    """Terminate a subprocess.Popen or psutil.Process, killing it if it does not exit."""
-    if process is None:
-        return
-    try:
-        process.terminate()
-        process.wait(timeout=timeout)
-    except Exception:
-        with contextlib.suppress(Exception):
-            process.kill()
-            process.wait(timeout=timeout)
 
 
 class PlaylunkyCache:

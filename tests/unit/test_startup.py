@@ -1,4 +1,5 @@
 import re
+import socket
 import threading
 import time
 from importlib.resources import files
@@ -55,6 +56,43 @@ def test_startup_timeout():
         SpelunkyEnv(launcher=launcher, startup_timeout=0.3)
     assert time.monotonic() - start < 3
     assert launcher.stops == 1
+
+
+def test_reset_restarts_a_game_that_does_not_answer(make_env):
+    from fake_lua import make_gamestate
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    launcher = FakeLauncher()
+    # the first game never answers its reset; the second one does
+    launcher.respond = lambda message, steps: None if launcher.starts == 1 else make_gamestate(rng)
+    env = make_env(SpelunkyEnv, launcher=launcher, step_timeout=0.3)
+    with pytest.warns(RuntimeWarning, match="stopped answering(.|\n)*fake launcher output"):
+        env.reset(seed=7)
+    assert (launcher.starts, launcher.stops) == (2, 1)
+    assert [m["seed"] for m in launcher.lua.messages if m["command"] == "reset"] == [7]
+    env.step(env.action_space.sample())
+
+
+def test_reset_restarts_a_game_that_died_in_a_step(make_env):
+    launcher = FakeLauncher()
+    env = make_env(SpelunkyEnv, launcher=launcher)
+    env.reset(seed=0)
+    launcher.lua.sock.shutdown(socket.SHUT_RDWR)  # the game is gone
+    with pytest.raises((ConnectionError, TimeoutError)):
+        env.step(env.action_space.sample())
+    with pytest.warns(RuntimeWarning, match="starting it again"):
+        env.reset(seed=1)
+    assert launcher.starts == 2
+    env.step(env.action_space.sample())
+
+
+def test_reset_gives_up_after_max_attempts(make_env):
+    launcher = FakeLauncher(respond=lambda message, steps: None)
+    env = make_env(SpelunkyEnv, launcher=launcher, step_timeout=0.2, max_launch_attempts=2)
+    with pytest.warns(RuntimeWarning), pytest.raises(TimeoutError):
+        env.reset(seed=0)
+    assert launcher.starts == 2
 
 
 def test_close_stops_the_launcher(make_env):

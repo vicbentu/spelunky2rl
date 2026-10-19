@@ -37,8 +37,6 @@ runs and the mod stays enabled:
 ```
 
 `fetch_assets.sh` checks those 5 bytes before patching and fails the build if they are not there.
-It also writes `playlunky/PATCHED`, which the wine launcher requires (an old `setup_wine.sh` install
-would otherwise start a game whose mod never loads).
 
 ## Redoing it for a new Playlunky
 

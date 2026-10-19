@@ -31,7 +31,7 @@ or pass `game_dir="..."` when creating an environment.
 2. Install the package (Python 3.9+, in a virtual environment):
 
    ```bash
-   pip install spelunky2rl    # with launcher="wine", add [render] for render()
+   pip install spelunky2rl
    ```
 
 3. Get the game image. Either pull it, or build it from a clone of the repo (a few minutes):
@@ -56,11 +56,8 @@ Nothing keeps running when no environment is open. The first start of a new game
 ```bash
 git clone https://github.com/vicbentu/spelunky2rl.git
 cd spelunky2rl
-pip install -e ".[dev]"    # add [render], and [train]/[video] for the training examples
+pip install -e ".[dev]"    # add [train]/[video] for the training examples
 ```
-
-**Without Docker** (development): `scripts/setup_wine.sh` installs the same pieces for the host's Wine,
-then use `launcher="wine"` or `SPELUNKY2RL_LAUNCHER=wine`.
 
 **Editing the Lua mod**: set `SPELUNKY2RL_DEV_MOD=/path/to/spelunky2rl/src/spelunky2rl/mod/lua` and new
 environments load it instead of the copy in the image; no rebuild needed.
@@ -102,14 +99,16 @@ parameters; `gymnasium.make("spelunky2rl/...", ...)` passes them through.
 | `render_mode` | str | None | `None`, `"rgb_array"` or `"rgb_array_list"`: what `render()` returns, see [Speed and images](#speed-and-images) |
 | `render_enabled` | bool | False | The same as `render_mode="rgb_array"` (the older name) |
 | `render_resolution` | (int, int) | (640, 360) | Size of the frames, 16:9 and at least 64x36; the game draws at this size |
-| `launcher` | str or `Launcher` | "auto" | `"docker"` (the default on Linux; `$SPELUNKY2RL_LAUNCHER` changes it) or `"wine"` |
+| `launcher` | str or `Launcher` | "auto" | `"auto"` or `"docker"` (the same for now), or a `Launcher` instance |
 | `renderer` | str | "auto" | `"gpu"`, `"cpu"` (Mesa's lavapipe) or `"auto"` (GPU if Docker can use one) |
+| `cpu_threads` | int | None | Threads drawing each frame on the CPU; None is one per core. See [Drawing on the CPU](#drawing-on-the-cpu) |
+| `gpu_memory_mb` | int | 512 | VRAM each game may use when it draws on the GPU; None for no limit. See [Many games on one GPU](#many-games-on-one-gpu) |
 | `launcher_options` | dict | None | Extra arguments for the launcher, e.g. `{"image": "..."}` for Docker |
 | `log_file` | str | None | Write every state to this file, see [Logging](#logging) |
 | `log_info` | list | `["all"]` | What `log_file` gets |
 | `step_timeout` | float | 60.0 | Seconds to wait for the game in `reset()`, `step()` and `render()` |
 | `startup_timeout` | float | 180.0 | Seconds for the game to start and connect |
-| `max_launch_attempts` | int | 3 | Launches before giving up if the game dies before connecting |
+| `max_launch_attempts` | int | 3 | Launches before giving up if the game dies before connecting; also how many times in a row `reset()` starts again a game that stopped answering |
 | `spelunky_dir` | str | None | The old name of `game_dir` |
 
 Any reset option (next section) can be passed here too, as the default of every episode.
@@ -214,9 +213,6 @@ faster. Steps/s with `render()` after every step, one instance:
 Without images the game runs on a 160x90 screen whatever `render_resolution` says (the screen size
 changes the speed even when nothing is drawn).
 
-With `launcher="wine"`, `"rgb_array"` grabs the screen instead, which may still show a frame from
-before the state, and `"rgb_array_list"` is not available.
-
 ### Many environments
 
 Each environment is its own game (one container on Linux), so run several in parallel. Measured on a
@@ -242,10 +238,94 @@ the CPU more instances add little, and with every frame drawn 4 instances fill t
 its 12 GiB of VRAM).
 
 Without images each instance keeps about one core busy, and so does its Python process. With the GPU
-renderer each instance takes ~1.75 GiB of VRAM, with or without images and at any resolution; past
-the card's VRAM they keep working, spilling to system memory. Synchronous vector envs (Gymnasium's
-`AsyncVectorEnv`, SB3's `SubprocVecEnv`) wait for the slowest env every step; with them 16 envs gave
-~3,000 steps/s in total. Asynchronous collection (one process per env) scales better.
+renderer each instance keeps its VRAM within `gpu_memory_mb` (see below). Synchronous vector envs
+(Gymnasium's `AsyncVectorEnv`, SB3's `SubprocVecEnv`) wait for the slowest env every step; with them
+16 envs gave ~3,000 steps/s in total. Asynchronous collection (one process per env) scales better.
+
+### Many games on one GPU
+
+Spelunky 2 loads all its textures, ~1.6 GiB uncompressed, into VRAM at startup, though a level draws
+a small part of them. `gpu_memory_mb` (512 by default) caps the VRAM each game uses: DXVK moves the
+textures it has not drawn lately to system RAM. Each game then takes 0.3-0.5 GiB instead of ~1.75,
+at about the same speed (5 games at 128x72: from 5 % fewer steps/s to 3 % more depending on the
+world, 2 % fewer on average over the 7 worlds; the same at 640x360), which leaves room for a model
+on the same card. `gpu_memory_mb=None` lifts the cap;
+past the card's VRAM the games still run, spilling to system memory, but a CUDA process that starts
+after them can find none left.
+
+Steps/s in total, `benchmarks/throughput.py scale --envs 1 5 10 15 20`: frames of 128x72 as the
+observation (`render()` after every step), random actions, Ryzen 9 7900X (24 threads), RTX 3060
+(12 GiB). *Free*: every game steps on its own; *lockstep*: every game steps and then the next step
+starts, as in a synchronous vector env (an ended episode resets inside the step).
+
+| Games | Free | Lockstep | VRAM per game | CPU cores per game |
+|---|---|---|---|---|
+| 1 | 645 | 597 | 0.38 GiB | 0.9 |
+| 5 | 2,630 | 1,740 | 0.36 GiB | 1.2 |
+| 10 | 3,150 | 1,870 | 0.35 GiB | 1.2 |
+| 15 | 3,340 | 1,990 | 0.33 GiB | 1.1 |
+| 20 | 3,330 | 1,890 | 0.31 GiB | 0.9 |
+
+Past ~10 games the GPU is the limit (90 % busy). With one game the GPU barely works and the driver
+lowers its clocks, so a step takes about twice as long as with a few games. In lockstep every game
+waits for the slowest one and for every reset each step: about 40 % fewer steps than free.
+
+How many, then: on this machine about 10 games on the GPU; more add little to the games and take
+GPU time from a model training on the same card. In a PPO training with a small transformer policy
+on that card (lockstep, the policy and the update in turns with the games), 10 and 15 games gave the
+same ~720 steps/s: the games stepped ~1,600-1,800 steps/s while they ran, and the policy and the
+update took the rest of the time. Past that point the training loop, not the games, sets the speed:
+overlapping the games' steps with the update (asynchronous collection) is what comes next.
+
+### Drawing on the CPU
+
+On the CPU (`renderer="cpu"`, or `"auto"` without a GPU) each game draws its frames with as many
+threads as the machine has cores. That gets one frame out soonest, which is what one env needs; with
+several envs their threads fight over the cores and spend more of them coordinating than drawing.
+`cpu_threads` caps them per env. Only the CPU renderer reads it.
+
+Steps/s in total with images (`"rgb_array"`, `render()` after every step), Ryzen 9 7900X (24 threads):
+
+| `render_resolution` | Envs | `cpu_threads=None` | `cpu_threads=4` | `cpu_threads=2` |
+|---|---|---|---|---|
+| 128x72 | 1 | 252 | 189 | 123 |
+| 128x72 | 4 | 469 | 530 | 384 |
+| 128x72 | 8 | 581 | 707 | 637 |
+| 128x72 | 16 | 681 | 796 | 808 |
+| 640x360 | 1 | 179 | 101 | 58 |
+| 640x360 | 4 | 271 | 267 | 185 |
+| 640x360 | 8 | 305 | 342 | 297 |
+
+Fewer threads pay off with several envs and small frames: try `cpu_threads=4`, and 2 with 16 envs
+or more (threads times envs about the number of cores). With one env or large frames keep the
+default: recording a video at 960x540 (`"rgb_array_list"`, one env) goes from 23 steps/s to 11 with
+`cpu_threads=4`. The GPU, where there is one, is still several times faster: 2,400 steps/s with 4
+envs at 128x72.
+
+### Long runs
+
+A game keeps its speed over a long run. 5 games in lockstep with images, 128x72: ms per lockstep step
+and memory of each game (`RssAnon` of `Spel2.exe`), from `benchmarks/throughput.py drift --envs 5`.
+Next to them, at the same time on the same machine (which is why a step takes ~4 ms here instead of
+~2.7), 5 games of the same image with Wine's `msvcp140`, as up to 0.1.3 (see below):
+
+| Steps per game | ms | Memory | ms, as up to 0.1.3 | Memory, as up to 0.1.3 |
+|---|---|---|---|---|
+| 10,000 | 4.12 | 885 MiB | 4.05 | 891 MiB |
+| 100,000 | 4.20 | 893 MiB | 4.38 | 999 MiB |
+| 300,000 | 4.10 | 911 MiB | 5.19 | 1,244 MiB |
+| 500,000 | 4.04 | 912 MiB | 6.31 | 1,469 MiB |
+| 660,000 | 3.93 | 936 MiB | | |
+
+On the CPU renderer the steps stay flat too (3 games in lockstep, `cpu_threads=4`: 10.0 ms per step
+at 10,000 steps per game and 9.9 at 410,000; as up to 0.1.3, 10.0 and 11.2), but each game's memory
+still grows ~0.57 KB a step: lavapipe loses a small buffer every frame, ~0.6 GB per million steps
+per game.
+
+Up to 0.1.3 the game ran with Wine's `msvcp140`, which leaks on every frame (see
+[architecture](architecture.md#launchers-enginelaunchers)): its memory grew ~1.2 KB a step and its
+steps got slower and slower, 2.5-3.5 times slower after 1-2 million steps per game in long
+trainings.
 
 ## Manual Control (Testing)
 

@@ -10,16 +10,6 @@ aplica. `@sha` es el commit en que estaba el código al escribir la entrada.
 
 ## Decidido sin ti
 
-### wine-prefix-per-instance · [2026-09-28 13:18 @4a2a9cf] El modo `wine` copia el prefijo por instancia (~1,2 GB cada uno)
-
-`WineLauncher` reserva "slots" con un bloqueo y copia el prefijo base la primera vez
-(`cp --reflink=auto`, gratis en btrfs/xfs). Con un prefijo compartido, 1 de 4 instancias fallaba.
-
-Coste: disco la primera vez en ext4. Solo afecta al modo sin Docker.
-
-Para cambiarlo: borrar `~/.local/share/spelunky2rl/wine/prefixes/`; o investigar el fallo con prefijo
-compartido.
-
 ### lua-tests-skipped-in-ci · [2026-10-01 21:59 @3d4af91] Los tests del BFS en Lua se saltan en CI
 
 `tests/unit/test_lua_pathfinding.py` ejecuta `pathfinding.distance_field` con el intérprete `lua5.4` o
@@ -72,3 +62,34 @@ no se actualiza.
 
 Para cambiarlo: borrar las tres líneas `if self.render_mode == "rgb_array": self.metadata = …` en
 `SpelunkyRLEngine.__init__` (`engine/core.py`) y `test_render_fps_is_that_of_what_render_returns`.
+
+### gpu-memory-default · [2026-10-16 00:39 @9243864] `gpu_memory_mb` es 512 por defecto: cada juego en GPU usa ~0,35 GB de VRAM
+
+Cada juego cargaba en VRAM todas las texturas (~1,6 GiB sin comprimir), 1,73-1,78 GB por juego. Una
+RTX 3060 de 12 GB admitía 6 juegos, o 3 junto a un DreamerV3 de 5,2 GB. Con dos entrenamientos de 5
+juegos el CUDA que arranca después se quedaba sin VRAM (el error de cuBLAS). Con
+`DXVK_CONFIG=dxvk.maxMemoryBudget=512` cada juego ocupa 0,31-0,38 GB (de 1 a 20 juegos) y da un 1-3 %
+menos de pasos/s (5 juegos: 2.714 frente a 2.751; 10: 3.351 frente a 3.456, juegos libres).
+
+Elegí 512 por defecto, también para quien no sepa que existe.
+
+Descartado:
+- Sin límite (lo de antes): ese 1-3 % de velocidad, a cambio de que cualquier CUDA que arranque
+  después de los juegos se quede sin VRAM.
+- Un presupuesto menor (256): no lo medí. Un nivel del mundo 1 dibuja ~270 MB de texturas; por debajo
+  de eso DXVK movería texturas a la VRAM y de vuelta en cada frame.
+
+Medido después, con la GPU libre: 5 juegos libres, 40 s por mundo con acciones al azar y god mode
+(`vram_tail.py` en el scratchpad de la sesión del 2026-10-16). Con 512 frente a sin límite:
+- A 128x72, en los 7 mundos, de un 5 % menos de pasos/s a un 3 % más según el mundo, un 1,7 % menos
+  de media. El que más pierde es el 6: 1.359 frente a 1.435. Con 1024, un 0,9 % menos de media.
+- A 640x360 (mundos 1, 4 y 6), lo mismo que sin límite, ±2 %.
+- El p99 y el p99,9 del paso son iguales. Los pasos de más de 20 ms son algo más frecuentes con el
+  tope, pero siempre menos del 0,03 % (en el mundo 4, 7 frente a 2 de ~43.000). Los resets, iguales.
+- Cada juego usa 0,30-0,50 GB (hasta 506 MB en el mundo 6); con 1024, 0,56-1,0 GB; sin límite,
+  1,74-1,78.
+
+Coste si me equivoco: hasta un 5 % de pasos/s en algunos mundos a 128x72.
+
+Para cambiarlo: `gpu_memory_mb=None` (sin límite) o otro número al crear el entorno; el valor por
+defecto está en `SpelunkyRLEngine.__init__` (`engine/core.py`).

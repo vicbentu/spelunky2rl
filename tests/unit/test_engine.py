@@ -130,7 +130,7 @@ def test_lua_error_is_raised(make_env):
 
 
 def test_silent_game_times_out(make_env):
-    env = make_env(DefaultEnv, respond=lambda message, steps: None, step_timeout=0.2)
+    env = make_env(DefaultEnv, respond=lambda message, steps: None, step_timeout=0.2, max_launch_attempts=1)
     with pytest.raises(TimeoutError):
         env.reset(seed=0)
 

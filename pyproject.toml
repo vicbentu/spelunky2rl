@@ -16,7 +16,6 @@ requires-python = ">=3.9"
 dependencies = [
     "gymnasium",
     "numpy",
-    "psutil",
 ]
 
 [project.urls]
@@ -36,11 +35,6 @@ train = [
     "sb3-contrib",
 ]
 
-# render() with launcher="wine" (captures the instance's X display; Docker does not need it)
-render = [
-    "mss>=10.2",
-]
-
 # For recording videos (examples/record_video.py)
 video = [
     "opencv-python",
@@ -54,7 +48,7 @@ dev = [
 
 # Install everything
 all = [
-    "spelunky2rl[train,render,video]",
+    "spelunky2rl[train,video]",
 ]
 
 [tool.setuptools.dynamic]

@@ -93,38 +93,40 @@ The base class that all environments inherit from. Located in `src/spelunky2rl/e
 def __init__(self, game_dir=None, launcher="auto", renderer="auto", **kwargs):
     # 1. Store configuration; kwargs become default reset options (an unknown one is a TypeError)
     self.reset_options = kwargs
-    # 2. Pick a launcher: Docker by default (or wine / a Launcher instance)
+    # 2. Pick a launcher: Docker by default, or a Launcher instance
     self.launcher = make_launcher(launcher, game_dir, renderer=renderer)
     # 3. Launch the game and wait for the mod to connect and say hello
     self._game_init()
 ```
 
-`_game_init()`:
+`_game_init()` listens on `127.0.0.1` on a random free port and starts the game there
+(`_start_game()`):
 
-1. Listens on `127.0.0.1` on a random free port.
-2. Inside `launcher.starting()` (which holds the Playlunky cache lock on a first start):
+1. Inside `launcher.starting()` (which holds the Playlunky cache lock on a first start):
    `launcher.start(port)`, then accepts the connection while polling `launcher.is_running()`.
    If the game dies before connecting it is relaunched, up to `max_launch_attempts`, all within
    `startup_timeout`. Errors include the launcher's recent output.
-3. Reads the mod's hello and checks the protocol version (`engine/protocol.py`).
-4. With a `render_mode`, asks the launcher for a frame source; `"rgb_array_list"` needs one that
+2. Reads the mod's hello and checks the protocol version (`engine/protocol.py`).
+3. With a `render_mode`, asks the launcher for a frame source; `"rgb_array_list"` needs one that
    counts frames (`counts_frames`, only `VulkanFrameSource`), else it is a `ValueError`.
+
+`reset()` uses the same `_start_game()` to restart in place a game that does not answer
+(`_restart_game()`, see Process Crashes).
 
 ### Launchers (engine/launchers/)
 
 A launcher starts one game instance that connects to the given port, reports whether it is still
 running, and tears it down. The port reaches the Lua mod through the `Spelunky_RL_Port` environment
-variable, and it is also how a launcher finds *its* `Spel2.exe` among several instances.
+variable.
 
 | Launcher | Where | How |
 |---|---|---|
 | `DockerLauncher` | Linux (default) | `docker run --rm --network host` of the game image per env; game mounted at `/game:ro`; `--gpus all` when available |
-| `WineLauncher` | Linux, no Docker | host Wine, one Xvfb, instance dir and prefix copy per env (`scripts/setup_wine.sh`) |
 
-Docker and Wine run each instance in a directory assembled over the read-only game folder
-(`engine/assemble.py`, `docker/entrypoint.sh`): symlinks to the game files, real copies of the few
-files the game writes, Goldberg's `steam_api64.dll`, the ini templates, and a
-`Mods/Packs` with only the `spelunky2rl` pack. Playlunky's asset cache (`Mods/Packs/.db`) lives in
+The container runs the game in a directory assembled over the read-only game folder
+(`docker/entrypoint.sh`): symlinks to the game files, real copies of the few files the game writes,
+Goldberg's `steam_api64.dll`, the ini templates, and a `Mods/Packs` with only the `spelunky2rl` pack.
+Playlunky's asset cache (`Mods/Packs/.db`) lives in
 `~/.cache/spelunky2rl/playlunky/<image>/<game build>/` and is shared by all instances.
 
 The pack only holds `lua/`: Playlunky writes inside mod folders and hangs on read-only packs that
@@ -132,6 +134,13 @@ contain images. `meta.unsafe` scripts (needed for luasocket) always start disabl
 `docker/fetch_assets.sh` patches one byte of `playlunky64.dll` to run them
 (`docker/playlunky-patch.md` says why and how to redo it on a Playlunky bump). Overlunky is not
 used: it draws its UI into every frame.
+
+The game runs with the `msvcp140.dll` from its own folder, not Wine's (`native,builtin` for
+`Spel2.exe` in the prefix, set by `docker/Dockerfile`). Playlunky draws
+its version on screen every frame, three texts, and each one goes through a
+`std::wstring_convert<std::codecvt_utf8_utf16<char16_t>>`; Wine's `msvcp140` before 10.5 (Ubuntu
+26.04 ships 10.0) leaves that codecvt's reference count unset and never frees it. With Wine's
+allocator around it, the game's heap grew ~1.2 KB a step and its steps got slower the longer it ran.
 
 `local.cfg` opens the game as a borderless window filling the Xvfb screen: fullscreen leaves every
 frame black under Wine + Xvfb, and a framed window leaves a black band where the title bar would be.
@@ -475,7 +484,7 @@ Signals the Lua script to clean up (though process is also terminated).
 
 1. Sends `{"command": "close"}` (the mod releases input, resets the speedhack and exits the game)
 2. Closes the sockets and the frame source
-3. `launcher.stop()`: kills the container / the game, Wine server and Xvfb of this instance
+3. `launcher.stop()`: kills the container of this instance
 
 If Python dies without closing, the mod sees the connection drop and exits the game itself, and
 the container goes with it (`--rm`).
@@ -616,8 +625,6 @@ returns plays at the game's speed.
 
 - `VulkanFrameSource` (Docker): reads the frames the image's Vulkan layer copies to the instance's
   file in `/dev/shm`, the state's own frame and, with `"rgb_array_list"`, those before it (below).
-- `X11FrameSource` (Wine): grabs the instance's Xvfb display with `mss`. It cannot tell frames
-  apart, so the image may be one or more frames older than the state.
 
 **Which frame `render()` returns.** One turn of the game's main loop runs these callbacks in this
 order (measured with Playlunky 0.19.0):
@@ -694,7 +701,11 @@ after `step_timeout` seconds instead of blocking forever.
 ### Process Crashes
 
 During startup the game is relaunched up to `max_launch_attempts` times. After startup a crashed
-game shows up as a `ConnectionError` on the next step; create a new environment to continue.
+game shows up as a `ConnectionError` on the next step. `reset()` starts the game again when it does
+not answer (`TimeoutError`, e.g. a first reset stuck while many games start at once) or is gone
+(`ConnectionError`, also after a failed step), with a `RuntimeWarning` that carries the launcher's
+output, and sends the reset to the new game, up to `max_launch_attempts` times in a row. An error the
+mod reports (`RuntimeError`) is not retried: it would happen again.
 
 ## Logging
 
@@ -731,8 +742,7 @@ def log_step(self, gamestate):
 
 From `pyproject.toml`:
 
-- **gymnasium**, **numpy**, **psutil**
-- **mss**: `render` extra, frame capture with the Wine launcher
+- **gymnasium**, **numpy**
 - **torch**, **stable-baselines3**, **sb3-contrib**: `train` extra, only for the examples
 
 ### System Dependencies
