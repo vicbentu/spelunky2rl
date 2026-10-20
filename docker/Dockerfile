@@ -28,8 +28,9 @@ COPY --from=fetch /opt/assets /opt/assets
 # DXVK (not wined3d, which renders wrong colours) and no audio driver. No crash dialog: winedbg
 # would wait on it forever with the game dead, and Python would only notice at startup_timeout.
 # The game runs with the msvcp140.dll from its own folder: Wine's before 10.5 never frees the
-# char16_t codecvt that Playlunky's on-screen text creates three times a frame, and the game's heap
-# then grows ~1.2 KB a step and its steps get slower over a run.
+# char16_t codecvt that any text drawn through Overlunky's set_text creates (Playlunky's version
+# text did, three times a frame, until fetch_assets.sh patched it out), and the game's heap then
+# grows ~1.2 KB a step and its steps get slower over a run.
 RUN (Xvfb :1 -nolisten tcp & sleep 1; DISPLAY=:1 wineboot -i; wineserver -w) \
  && cp /opt/assets/dxvk/x64/*.dll "$WINEPREFIX/drive_c/windows/system32/" \
  && for d in d3d11 dxgi d3d10core d3d9 d3d8; do \

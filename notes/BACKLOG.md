@@ -112,6 +112,18 @@ sabe si ni cómo). Se borran al hacerlas o descartarlas (git es el archivo).
   primero las comprobaciones del mod, mover `playlunky.ini`/`local.cfg` a `docker/config/` (junto a
   `nvidia_icd.json`), reconstruir la imagen y pasar `tests/unit` con una instalación no editable y
   `tests/integration`.
+- [2026-10-20 20:28 @60da7ee] Antes de publicar 0.1.5, poner al día cifras de `docs/getting-started.md` que no dicen con qué
+  imagen se midieron:
+  - **"Long runs"**: sus ms son de la 0.1.4, con el texto de versión de Playlunky. Sin el texto, un
+    paso es ~6 % más rápido: 1,56-1,59 ms frente a 1,45-1,49 ms (3 juegos en la GPU a la vez, uno por
+    proceso, 2026-10-20).
+  - **La columna "as up to 0.1.3" de esa tabla**: corrió con `gpu_memory_mb=512`, y la 0.1.3 no tenía
+    límite. Con la imagen actual ya no se reproduce: sin el texto, el `msvcp140` de Wine no pierde
+    memoria.
+  - **"10 and 15 games gave the same ~720 steps/s"** (l. 274-276): se midió el 2026-10-16 con la imagen
+    `:0.1.3` y el límite de VRAM. Coincide con la velocidad de la 0.1.5, pero no lo dice.
+  Arreglo: volver a medir "Long runs" con `benchmarks/throughput.py drift --envs 5` en la imagen
+  0.1.5, comparando contra la 0.1.3 publicada, y anotar la imagen y la versión en cada cifra.
 
 ## Ideas
 

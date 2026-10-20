@@ -130,17 +130,23 @@ Playlunky's asset cache (`Mods/Packs/.db`) lives in
 `~/.cache/spelunky2rl/playlunky/<image>/<game build>/` and is shared by all instances.
 
 The pack only holds `lua/`: Playlunky writes inside mod folders and hangs on read-only packs that
-contain images. `meta.unsafe` scripts (needed for luasocket) always start disabled in Playlunky, so
-`docker/fetch_assets.sh` patches one byte of `playlunky64.dll` to run them
-(`docker/playlunky-patch.md` says why and how to redo it on a Playlunky bump). Overlunky is not
-used: it draws its UI into every frame.
+contain images. `docker/fetch_assets.sh` patches two bytes of `playlunky64.dll`
+(`docker/playlunky-patch.md` says why and how to redo them on a Playlunky bump): `meta.unsafe`
+scripts (needed for luasocket) always start disabled in Playlunky, and one byte runs them; the other
+stops Playlunky drawing its version on screen (see below). Overlunky is not used: it draws its UI
+into every frame.
 
 The game runs with the `msvcp140.dll` from its own folder, not Wine's (`native,builtin` for
-`Spel2.exe` in the prefix, set by `docker/Dockerfile`). Playlunky draws
-its version on screen every frame, three texts, and each one goes through a
+`Spel2.exe` in the prefix, set by `docker/Dockerfile`). Playlunky drew
+its version on screen every frame, three texts, and each one went through a
 `std::wstring_convert<std::codecvt_utf8_utf16<char16_t>>`; Wine's `msvcp140` before 10.5 (Ubuntu
 26.04 ships 10.0) leaves that codecvt's reference count unset and never frees it. With Wine's
 allocator around it, the game's heap grew ~1.2 KB a step and its steps got slower the longer it ran.
+The game's own `msvcp140` frees it, but its constructor makes a `setlocale` round trip each time:
+~0.12 ms per drawn frame, 8 % of a step with one game on the GPU at 128x72. So the version text is
+patched out too; in a level it was barely visible (at 128x72, 14 pixels off by at most 3). The
+`msvcp140` override stays: any other text drawn through Overlunky's `set_text` would leak again
+with Wine's.
 
 `local.cfg` opens the game as a borderless window filling the Xvfb screen: fullscreen leaves every
 frame black under Wine + Xvfb, and a framed window leaves a black band where the title bar would be.
